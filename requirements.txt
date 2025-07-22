@@ -1,0 +1,9 @@
+streamlit
+pandas
+google-api-python-client
+plotly
+pytrends
+prophet
+numpy
+openai
+scikit-learn
