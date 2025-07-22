@@ -213,11 +213,11 @@ class AdvancedTrendsAnalyzer:
             return None
 
 class ContentStrategist:
-    # ... (код без изменений)
     def __init__(self, openai_key=None, openai_model=None):
         self.use_openai = bool(openai_key and openai_model)
         if self.use_openai:
-            openai.api_key = openai_key
+            # Важно: сам ключ теперь не устанавливается глобально, а используется для создания клиента
+            self.api_key = openai_key 
             self.model = openai_model
 
     def get_strategy(self, keyword: str, comp_analysis: dict, trends_data: dict, df: pd.DataFrame):
@@ -280,8 +280,16 @@ class ContentStrategist:
         4.  **💣 Скрытый Риск:** Назови один неочевидный риск для автора в этой теме.
         """
         try:
-            response = openai.ChatCompletion.create(model=self.model, messages=[{"role": "user", "content": prompt}], temperature=0.7, max_tokens=800)
-            return response.choices[0].message['content']
+            # --- ИЗМЕНЕННЫЙ БЛОК ---
+            client = openai.OpenAI(api_key=self.api_key)
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=800
+            )
+            return response.choices[0].message.content
+            # --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
         except Exception as e:
             return f"❌ Ошибка при обращении к OpenAI: {e}"
 
