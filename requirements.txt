@@ -1,9 +1,8 @@
-streamlit
-pandas
-google-api-python-client
-plotly
-pytrends
-prophet
-numpy
-openai
-scikit-learn
+streamlit>=1.28.0
+pandas>=1.5.0
+google-api-python-client>=2.0.0
+plotly>=5.0.0
+pytrends>=4.9.0
+openai>=1.0.0
+numpy>=1.21.0
+requests>=2.25.0
