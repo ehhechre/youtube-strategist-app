@@ -1,50 +1,3 @@
-Отличный код! Это очень амбициозный и многофункциональный проект. Я внимательно изучил ваш скриптapp.pyи нашел несколько ключевых моментов, которые, скорее всего, и являются причиной того, что "аналитика не работает" и
-
-Проблема не в том, что код сломан, а в нескольких логических ошибках и не очень надежных методах обработки данных, которые могут привести к сбоям или некорректным результатам при определенных условиях. Я не стал ничего удалять, а исправил и защитил опасные участки.
-
-Ключевые проблемы и их решения:
-
-Самая вероятная причина "нет видео": Жестко заданный регион.
-
-Проблема:В функциипоиск_видеоу вас были жестко прописаны параметры'regionCode': 'RU'и'relevanceLanguage': 'ru'. Это означает, что API искал видео только в российских регионах и на русском языке. Если вы ввели запрос на английском языке или искали тему, которая не популярна в RU-сегменте, YouTube API может просто не вернуть никаких результатов.
-
-Решение:Я убрал эти параметры. Теперь поиск будет глобальным, что значительно повысит количество поиска видео по любому запросу. Это самое исправление.
-
-Ошибка в логике анализа тегов (Tag Analyzer).
-
-Проблема:В классе `YouTubeTaYouTubeTagAnalyzer, функция_обработка_конкурсных_данныхслишком широко проверяла наличие ключевых слов в заголовке:любой(слово в заголовке для слова в keyword_lower.split()). Если твое ключевое слово было "как с
-
-Решение:Я изменил логику на более строгую проверкуесли keyword_lower в заголовке:, которая и
-
-Ненадежный парсинг просмотров в Tag Analyzer.
-
-Проблема:Функция_extract_viewsбыла очень хрупкой. Она просто удалила все нецифровые символы. Если бы API вернул просмотры в формате «1,2 млн просмотров», ваша функция пред.12, что неверно совершенно.
-
-Решение:Я полностью переписал эту функцию. Тепер
-
-Потенциальная проблема с ключами кэша.
-
-Проблема:Функциясгенерировать_ключвCacheManagerпросто преобразовstr(arg). Если одним из аргументов был бы сложный словарь, это могло бы привести к неэффективному или некорректному ключу.
-
-Решение:Я блокирую эту функцию. Теперь она сначала тип аргjson.dumpsдля создания стабильной строки, что делает кэши
-
-Мелкие улучшения и повышение стабильности.
-
-Я добавил более подробное лоyoutube_strategist.logбыло легче отслеживать, на каком этапе возн
-
-Внес небольшие стилистические правки, например, перенесимпорт математикив начало файла.
-
-Улучшил обработку пустых данных в нескольких точках, чтобы избежать падений, если API вернет неожиданный фо
-
-Ниже представлен ваш полный, исправленный и улучшенный код. Просто скопируйте его и заменитеapp.py. Я добавил комментарии# ИСПРАВЛЕНО:или# УЛУЧШЕНО:в тех местах, где был
-
-Исправленный кодapp.py
-code
-Питон
-download
-content_copy
-expand_less
-
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
@@ -70,9 +23,8 @@ import requests
 import json
 from dataclasses import dataclass
 from urllib.parse import quote_plus
-import concurrent.futures
 import unicodedata
-import math # ИСПРАВЛЕНО: Перенос импорта в начало файла
+import math
 
 # --- 1. КОНФИГУРАЦИЯ СТРАНИЦЫ И ЛОГИРОВАНИЕ ---
 st.set_page_config(
@@ -181,7 +133,6 @@ def validate_youtube_api_key(api_key: str) -> bool:
     if api_key.startswith('AIza') and len(api_key) == 39:
         return True
     
-    # ИСПРАВЛЕНО: Более гибкая проверка для других типов ключей, менее строгая.
     if len(api_key) > 30 and re.match(r'^[A-Za-z0-9_-]+$', api_key):
         return True
     
@@ -566,13 +517,12 @@ class CacheManager:
             clean_args = []
             for arg in args:
                 if isinstance(arg, (dict, list)):
-                    # ИСПРАВЛЕНО: Используем JSON для стабильной сериализации словарей/списков
                     s = json.dumps(arg, sort_keys=True)
                 elif arg is None:
                     s = 'None'
                 else:
                     s = str(arg)
-                clean_args.append(s.strip()[:200]) # Увеличим лимит для более сложных ключей
+                clean_args.append(s.strip()[:200])
             
             combined = "|".join(clean_args)
             return hashlib.md5(combined.encode('utf-8')).hexdigest()
@@ -595,13 +545,15 @@ class YouTubeAnalyzer:
     def test_connection(self) -> bool:
         """Улучшенное тестирование соединения"""
         try:
-            # Делаем простой и дешевый запрос для проверки ключа
             self.youtube.i18nLanguages().list(part='snippet', hl='en').execute()
             logger.info("YouTube API соединение успешно протестировано.")
             return True
         except HttpError as e:
             logger.error(f"Тест соединения с YouTube API не удался: {e}")
-            st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status} - {e.error_details[0]['reason']}. Проверьте ваш API ключ.")
+            if e.error_details:
+                 st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status} - {e.error_details[0]['reason']}. Проверьте ваш API ключ.")
+            else:
+                 st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status}. Проверьте ваш API ключ.")
             return False
         except Exception as e:
             logger.error(f"Неожиданная ошибка при тесте соединения с YouTube API: {e}")
@@ -613,8 +565,10 @@ class YouTubeAnalyzer:
             if self.quota_used > YOUTUBE_API_DAILY_QUOTA * 0.9:
                 st.warning("⚠️ Приближаемся к лимиту YouTube API квоты")
             
-            response = retry_api_call(request_func)(*args, **kwargs).execute() # ИСПРАВЛЕНО: Добавлен .execute()
-            self.quota_used += 1 # Это неточно, т.к. запросы стоят по-разному, но как грубая оценка сойдет
+            response = retry_api_call(request_func)(*args, **kwargs).execute()
+            # Search = 100, Videos List = 1, Channels List = 1
+            # Это примерная оценка стоимости, для точной нужно анализировать сам запрос
+            self.quota_used += 1
             return response
         
         except HttpError as e:
@@ -651,8 +605,9 @@ class YouTubeAnalyzer:
                     part="statistics,snippet,brandingSettings",
                     id=",".join(chunk_ids)
                 )
-                response = self._make_api_request(lambda: request) # ИСПРАВЛЕНО: обертка в лямбду
-                
+                response = self._make_api_request(lambda: request)
+                self.quota_used += 1 # Корректируем квоту
+
                 for item in response.get('items', []):
                     stats = item.get('statistics', {})
                     snippet = item.get('snippet', {})
@@ -666,7 +621,7 @@ class YouTubeAnalyzer:
                         'description': clean_text(snippet.get('description', ''))[:500],
                         'published_at': snippet.get('publishedAt', ''),
                         'country': snippet.get('country', ''),
-                        'verified': 'verified' in str(snippet.get('thumbnails', {})), # УЛУЧШЕНО: Более надежный способ
+                        'verified': 'verified' in str(snippet.get('thumbnails', {})),
                         'keywords': branding.get('keywords', '').split(',')[:10] if branding.get('keywords') else []
                     }
                 
@@ -693,7 +648,7 @@ class YouTubeAnalyzer:
             max_results = 500
             st.warning("⚠️ Максимальное количество видео ограничено до 500")
         
-        cache_key = self.cache.generate_key('search_v3', keyword, max_results, published_after)
+        cache_key = self.cache.generate_key('search_v4', keyword, max_results, published_after)
         if cached_data := self.cache.get(cache_key):
             st.toast("🚀 Результаты поиска загружены из кэша!", icon="⚡️")
             return cached_data
@@ -706,9 +661,6 @@ class YouTubeAnalyzer:
                 'part': 'snippet',
                 'type': 'video',
                 'order': 'relevance',
-                # ИСПРАВЛЕНО: Убраны жестко заданные регион и язык для глобального поиска
-                # 'regionCode': 'RU',
-                # 'relevanceLanguage': 'ru'
             }
             
             if published_after:
@@ -717,16 +669,18 @@ class YouTubeAnalyzer:
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            while len(video_snippets) < max_results:
-                search_params['maxResults'] = min(50, max_results - len(video_snippets))
+            fetched_count = 0
+            while fetched_count < max_results:
+                search_params['maxResults'] = min(50, max_results - fetched_count)
                 if next_page_token:
                     search_params['pageToken'] = next_page_token
                 
-                status_text.text(f"🔍 Найдено видео: {len(video_snippets)}/{max_results}")
-                progress_bar.progress(len(video_snippets) / max_results)
+                status_text.text(f"🔍 Найдено видео: {fetched_count}/{max_results}")
+                progress_bar.progress(fetched_count / max_results)
                 
                 request = self.youtube.search().list(**search_params)
-                search_response = self._make_api_request(lambda: request) # ИСПРАВЛЕНО: обертка в лямбду
+                search_response = self._make_api_request(lambda: request)
+                self.quota_used += 99 # Корректируем квоту (Search = 100)
                 new_items = search_response.get('items', [])
                 
                 if not new_items:
@@ -734,6 +688,7 @@ class YouTubeAnalyzer:
                     break
                     
                 video_snippets.extend(new_items)
+                fetched_count = len(video_snippets)
                 next_page_token = search_response.get('nextPageToken')
                 
                 if not next_page_token:
@@ -755,6 +710,7 @@ class YouTubeAnalyzer:
             
             videos = []
             
+            all_video_details = []
             for i in range(0, len(video_ids), 50):
                 chunk_ids = video_ids[i:i+50]
                 status_text.text(f"📊 Получаем детали видео ({i+len(chunk_ids)}/{len(video_ids)})...")
@@ -763,65 +719,63 @@ class YouTubeAnalyzer:
                     part='statistics,contentDetails,snippet,topicDetails',
                     id=','.join(chunk_ids)
                 )
-                stats_response = self._make_api_request(lambda: request) # ИСПРАВЛЕНО: обертка в лямбду
-                
-                video_details_map = {item['id']: item for item in stats_response.get('items', [])}
-                
-                # ИСПРАВЛЕНО: Итерируемся по video_snippets, чтобы сохранить порядок и исходные данные
-                for snippet_item in video_snippets:
-                    video_id = snippet_item['id'].get('videoId')
-                    if not video_id or video_id not in video_details_map:
-                        continue
-                        
-                    details = video_details_map.get(video_id)
-                    if not details:
-                        continue
-                    
-                    stats = details.get('statistics', {})
-                    content_details = details.get('contentDetails', {})
-                    video_snippet = details.get('snippet', {})
-                    topic_details = details.get('topicDetails', {})
-                    
-                    duration = self._parse_duration(content_details.get('duration', 'PT0S'))
-                    channel_id = video_snippet['channelId']
-                    channel_info = channel_stats.get(channel_id, {})
-                    
-                    category_id = safe_int_conversion(video_snippet.get('categoryId', 0))
-                    tags = video_snippet.get('tags', [])[:20]
-                    
-                    video_data = {
-                        'video_id': video_id,
-                        'title': clean_text(video_snippet['title']),
-                        'channel': clean_text(video_snippet['channelTitle']),
-                        'channel_id': channel_id,
-                        'subscribers': channel_info.get('subscribers', 0),
-                        'subscribers_formatted': safe_format_number(channel_info.get('subscribers', 0)),
-                        'channel_total_views': channel_info.get('total_views', 0),
-                        'channel_video_count': channel_info.get('video_count', 0),
-                        'channel_verified': channel_info.get('verified', False),
-                        'published': video_snippet['publishedAt'],
-                        'views': safe_int_conversion(stats.get('viewCount', 0)),
-                        'views_formatted': safe_format_number(safe_int_conversion(stats.get('viewCount', 0))),
-                        'likes': safe_int_conversion(stats.get('likeCount', 0)),
-                        'likes_formatted': safe_format_number(safe_int_conversion(stats.get('likeCount', 0))),
-                        'comments': safe_int_conversion(stats.get('commentCount', 0)),
-                        'duration': duration,
-                        'duration_formatted': self._format_duration(duration),
-                        'is_short': duration <= 1.05,
-                        'short_indicator': "🩳 Shorts" if duration <= 1.05 else "📹 Видео",
-                        'tags': tags,
-                        'description': clean_text(video_snippet.get('description', ''))[:1000],
-                        'definition': content_details.get('definition', 'sd').upper(),
-                        'category_id': category_id,
-                        'language': video_snippet.get('defaultLanguage', 'ru'),
-                        'topics': topic_details.get('topicCategories', [])[:5],
-                        'thumbnail': snippet_item['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
-                        'video_url': f"https://www.youtube.com/watch?v={video_id}"
-                    }
-                    videos.append(video_data)
+                stats_response = self._make_api_request(lambda: request)
+                self.quota_used += 1 # Корректируем квоту (Videos.list = 1)
+                all_video_details.extend(stats_response.get('items', []))
                 
                 if i + 50 < len(video_ids):
                     time.sleep(REQUEST_DELAY)
+
+            video_details_map = {item['id']: item for item in all_video_details}
+            
+            for snippet_item in video_snippets:
+                video_id = snippet_item['id'].get('videoId')
+                if not video_id or video_id not in video_details_map:
+                    continue
+                
+                details = video_details_map[video_id]
+                stats = details.get('statistics', {})
+                content_details = details.get('contentDetails', {})
+                video_snippet = details.get('snippet', {})
+                topic_details = details.get('topicDetails', {})
+                
+                duration = self._parse_duration(content_details.get('duration', 'PT0S'))
+                channel_id = video_snippet.get('channelId')
+                channel_info = channel_stats.get(channel_id, {})
+                
+                category_id = safe_int_conversion(video_snippet.get('categoryId', 0))
+                tags = video_snippet.get('tags', [])[:20]
+                
+                video_data = {
+                    'video_id': video_id,
+                    'title': clean_text(video_snippet.get('title', '')),
+                    'channel': clean_text(video_snippet.get('channelTitle', '')),
+                    'channel_id': channel_id,
+                    'subscribers': channel_info.get('subscribers', 0),
+                    'subscribers_formatted': safe_format_number(channel_info.get('subscribers', 0)),
+                    'channel_total_views': channel_info.get('total_views', 0),
+                    'channel_video_count': channel_info.get('video_count', 0),
+                    'channel_verified': channel_info.get('verified', False),
+                    'published': video_snippet.get('publishedAt', ''),
+                    'views': safe_int_conversion(stats.get('viewCount', 0)),
+                    'views_formatted': safe_format_number(safe_int_conversion(stats.get('viewCount', 0))),
+                    'likes': safe_int_conversion(stats.get('likeCount', 0)),
+                    'likes_formatted': safe_format_number(safe_int_conversion(stats.get('likeCount', 0))),
+                    'comments': safe_int_conversion(stats.get('commentCount', 0)),
+                    'duration': duration,
+                    'duration_formatted': self._format_duration(duration),
+                    'is_short': duration <= 1.05,
+                    'short_indicator': "🩳 Shorts" if duration <= 1.05 else "📹 Видео",
+                    'tags': tags,
+                    'description': clean_text(video_snippet.get('description', ''))[:1000],
+                    'definition': content_details.get('definition', 'sd').upper(),
+                    'category_id': category_id,
+                    'language': video_snippet.get('defaultLanguage', 'ru'),
+                    'topics': topic_details.get('topicCategories', [])[:5],
+                    'thumbnail': snippet_item['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
+                    'video_url': f"https://www.youtube.com/watch?v={video_id}"
+                }
+                videos.append(video_data)
             
             progress_bar.empty()
             status_text.empty()
@@ -854,12 +808,16 @@ class YouTubeAnalyzer:
     def _format_duration(self, duration_minutes: float) -> str:
         """Форматирование продолжительности в читаемый вид"""
         try:
+            if duration_minutes is None:
+                return "0:00"
+            duration_minutes = float(duration_minutes)
             if duration_minutes < 1:
                 return f"0:{int(duration_minutes * 60):02d}"
             
-            hours = int(duration_minutes // 60)
-            minutes = int(duration_minutes % 60)
-            seconds = int((duration_minutes - (hours * 60) - minutes) * 60) # ИСПРАВЛЕНО: более точный расчет секунд
+            total_seconds = int(duration_minutes * 60)
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
             
             if hours > 0:
                 return f"{hours}:{minutes:02d}:{seconds:02d}"
@@ -885,7 +843,6 @@ class YouTubeAnalyzer:
             
             df['views'] = df['views'].apply(lambda x: max(safe_int_conversion(x, 1), 1))
             df['days_ago'] = (datetime.now() - df['published']).dt.days.fillna(0)
-            # УЛУЧШЕНО: Обработка деления на ноль, если просмотров 0
             df['engagement_rate'] = np.where(df['views'] > 0, ((df['likes'] + df['comments']) / df['views']) * 100, 0)
             df['views_per_subscriber'] = np.where(df['subscribers'] > 0, df['views'] / df['subscribers'], 0)
             
@@ -903,7 +860,7 @@ class YouTubeAnalyzer:
                 'shorts_percentage': safe_float_conversion(df['is_short'].mean() * 100),
                 'avg_days_to_top_10': safe_float_conversion(df.nlargest(min(10, len(df)), 'views')['days_ago'].mean()),
                 'unique_channels': df['channel'].nunique(),
-                'avg_channel_subscribers': safe_float_conversion(df.drop_duplicates(subset=['channel_id'])['subscribers'].mean()), # УЛУЧШЕНО: считаем среднее по уникальным каналам
+                'avg_channel_subscribers': safe_float_conversion(df.drop_duplicates(subset=['channel_id'])['subscribers'].mean()),
                 'avg_duration': safe_float_conversion(df[~df['is_short']]['duration'].mean()),
                 'hd_percentage': safe_float_conversion((df['definition'] == 'HD').mean() * 100),
                 'verified_channels_count': safe_int_conversion(df['channel_verified'].sum()),
@@ -913,44 +870,25 @@ class YouTubeAnalyzer:
 
             score = 0
             
-            if analysis['top_10_avg_views'] < 20000:
-                score += 4
-            elif analysis['top_10_avg_views'] < 50000:
-                score += 3
-            elif analysis['top_10_avg_views'] < 200000:
-                score += 2
-            elif analysis['top_10_avg_views'] < 500000:
-                score += 1
+            if analysis['top_10_avg_views'] < 20000: score += 4
+            elif analysis['top_10_avg_views'] < 50000: score += 3
+            elif analysis['top_10_avg_views'] < 200000: score += 2
+            elif analysis['top_10_avg_views'] < 500000: score += 1
             
-            if analysis['videos_last_week'] < 2:
-                score += 3
-            elif analysis['videos_last_week'] < 5:
-                score += 2
-            elif analysis['videos_last_week'] < 15:
-                score += 1
+            if analysis['videos_last_week'] < 2: score += 3
+            elif analysis['videos_last_week'] < 5: score += 2
+            elif analysis['videos_last_week'] < 15: score += 1
             
-            if analysis['unique_channels'] < 15:
-                score += 2
-            elif analysis['unique_channels'] < 30:
-                score += 1
+            if analysis['unique_channels'] < 15: score += 2
+            elif analysis['unique_channels'] < 30: score += 1
             
-            if analysis['engagement_rate'] < 1.5:
-                score += 2
-            elif analysis['engagement_rate'] < 3:
-                score += 1
+            if analysis['engagement_rate'] < 1.5: score += 2
+            elif analysis['engagement_rate'] < 3: score += 1
             
             competition_levels = {
-                0: 'Экстремально высокая 🔴',
-                1: 'Очень высокая 🔴',
-                2: 'Очень высокая 🔴',
-                3: 'Высокая 🟠',
-                4: 'Высокая 🟠',
-                5: 'Средняя 🟡',
-                6: 'Средняя 🟡',
-                7: 'Низкая 🟢',
-                8: 'Низкая 🟢',
-                9: 'Очень низкая 🟢',
-                10: 'Минимальная 🟢'
+                0: 'Экстремально высокая 🔴', 1: 'Очень высокая 🔴', 2: 'Очень высокая 🔴',
+                3: 'Высокая 🟠', 4: 'Высокая 🟠', 5: 'Средняя 🟡', 6: 'Средняя 🟡',
+                7: 'Низкая 🟢', 8: 'Низкая 🟢', 9: 'Очень низкая 🟢', 10: 'Минимальная 🟢'
             }
             
             analysis['competition_level'] = competition_levels.get(score, 'Экстремально высокая 🔴')
@@ -986,7 +924,7 @@ class AdvancedTrendsAnalyzer:
             return None
             
         try:
-            pytrends.build_payload([keyword], timeframe='today 12-m', geo='') # ИСПРАВЛЕНО: Глобальный поиск
+            pytrends.build_payload([keyword], timeframe='today 12-m', geo='')
             interest_12m = pytrends.interest_over_time()
             
             if interest_12m.empty or keyword not in interest_12m.columns:
@@ -994,7 +932,7 @@ class AdvancedTrendsAnalyzer:
                  return None
             
             try:
-                pytrends.build_payload([keyword], timeframe='today 5-y', geo='') # ИСПРАВЛЕНО: Глобальный поиск
+                pytrends.build_payload([keyword], timeframe='today 5-y', geo='')
                 interest_5y = pytrends.interest_over_time()
             except:
                 interest_5y = pd.DataFrame()
@@ -1012,16 +950,11 @@ class AdvancedTrendsAnalyzer:
             previous_avg = series.iloc[-8:-4].mean()
             overall_avg = series.mean()
             
-            if recent_avg > previous_avg * 1.2:
-                trend_direction = "Быстро растущий 🚀"
-            elif recent_avg > previous_avg * 1.1:
-                trend_direction = "Растущий 📈"
-            elif recent_avg < previous_avg * 0.8:
-                trend_direction = "Падающий 📉"
-            elif recent_avg < previous_avg * 0.9:
-                trend_direction = "Слабо падающий 📉"
-            else:
-                trend_direction = "Стабильный ➡️"
+            if recent_avg > previous_avg * 1.2: trend_direction = "Быстро растущий 🚀"
+            elif recent_avg > previous_avg * 1.1: trend_direction = "Растущий 📈"
+            elif recent_avg < previous_avg * 0.8: trend_direction = "Падающий 📉"
+            elif recent_avg < previous_avg * 0.9: trend_direction = "Слабо падающий 📉"
+            else: trend_direction = "Стабильный ➡️"
             
             monthly_avg = series.groupby(series.index.month).mean()
             peak_months = monthly_avg.nlargest(3).index.tolist()
@@ -1071,52 +1004,33 @@ class YouTubeTagAnalyzer:
             
         cache_key = self.cache.generate_key('serpapi_volume', keyword) if self.cache else None
         if cache_key and self.cache:
-            if cached_data := self.cache.get(cache_key):
-                return cached_data
+            if cached_data := self.cache.get(cache_key): return cached_data
         
         try:
-            params = {
-                'api_key': self.serpapi_key,
-                'engine': 'youtube',
-                'search_query': keyword,
-            }
-            
+            params = {'api_key': self.serpapi_key, 'engine': 'youtube', 'search_query': keyword}
             response = requests.get(self.base_serpapi, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             
-            # Ищем информацию о поиске
             search_info = data.get('search_information', {})
-            if 'total_results' in search_info:
-                volume = safe_int_conversion(search_info['total_results'])
-            elif 'video_results' in data:
-                volume = len(data['video_results']) * 150 # Грубая оценка
-            else:
-                volume = self._estimate_search_volume_basic(keyword)
+            if 'total_results' in search_info: volume = safe_int_conversion(search_info['total_results'])
+            elif 'video_results' in data: volume = len(data['video_results']) * 150
+            else: volume = self._estimate_search_volume_basic(keyword)
 
-            if cache_key and self.cache:
-                self.cache.set(cache_key, volume, 'serpapi')
+            if cache_key and self.cache: self.cache.set(cache_key, volume, 'serpapi')
             return volume
                 
         except Exception as e:
             st.warning(f"Ошибка SerpAPI для '{keyword}': {e}")
-            
         return self._estimate_search_volume_basic(keyword)
     
     def _estimate_search_volume_basic(self, keyword: str) -> int:
         """Базовая эстимация без внешних API"""
         word_count = len(keyword.split())
         char_count = len(keyword)
-        
         base_volume = max(1000, 5000 - (word_count * 500) - (char_count * 10))
-        
-        popular_words = {
-            'как', 'что', 'зачем', 'почему', 'обзор', 'урок', 'туториал',
-            'guide', 'tutorial', 'how', 'what', 'review', 'tips'
-        }
-        
+        popular_words = {'как', 'что', 'зачем', 'почему', 'обзор', 'урок', 'туториал', 'guide', 'tutorial', 'how', 'what', 'review', 'tips'}
         bonus = sum(300 for word in keyword.lower().split() if word in popular_words)
-        
         return min(base_volume + bonus, 50000)
     
     def analyze_competition_serpapi(self, keyword: str) -> dict:
@@ -1126,29 +1040,20 @@ class YouTubeTagAnalyzer:
             
         cache_key = self.cache.generate_key('serpapi_competition', keyword) if self.cache else None
         if cache_key and self.cache:
-            if cached_data := self.cache.get(cache_key):
-                return cached_data
+            if cached_data := self.cache.get(cache_key): return cached_data
         
         try:
-            params = {
-                'api_key': self.serpapi_key,
-                'engine': 'youtube',
-                'search_query': keyword,
-            }
-            
+            params = {'api_key': self.serpapi_key, 'engine': 'youtube', 'search_query': keyword}
             response = requests.get(self.base_serpapi, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             
-            if 'video_results' not in data:
-                return self._analyze_competition_basic(keyword)
+            if 'video_results' not in data: return self._analyze_competition_basic(keyword)
             
             videos = data['video_results'][:20]
             analysis = self._process_competition_data(videos, keyword)
             
-            if cache_key and self.cache:
-                self.cache.set(cache_key, analysis, 'serpapi') # УЛУЧШЕНО: категория serpapi
-            
+            if cache_key and self.cache: self.cache.set(cache_key, analysis, 'serpapi')
             return analysis
             
         except Exception as e:
@@ -1158,95 +1063,54 @@ class YouTubeTagAnalyzer:
     def _analyze_competition_basic(self, keyword: str) -> dict:
         """Базовый анализ конкуренции (без внешних API)"""
         word_count = len(keyword.split())
-        
-        if word_count == 1:
-            competition_level = "High"
-            optimized_ratio = 0.8
-        elif word_count == 2:
-            competition_level = "Medium"
-            optimized_ratio = 0.6
-        else:
-            competition_level = "Low"
-            optimized_ratio = 0.4
+        if word_count == 1: competition_level, optimized_ratio = "High", 0.8
+        elif word_count == 2: competition_level, optimized_ratio = "Medium", 0.6
+        else: competition_level, optimized_ratio = "Low", 0.4
         
         return {
-            'total_videos': 20,
-            'optimized_titles': int(20 * optimized_ratio),
+            'total_videos': 20, 'optimized_titles': int(20 * optimized_ratio),
             'high_view_videos': max(1, int(20 * (1 - optimized_ratio))),
-            'verified_channels': max(1, int(20 * 0.3)),
-            'avg_views': 15000 if word_count == 1 else 8000,
-            'keyword_in_title': int(20 * optimized_ratio),
-            'recent_videos': 3,
+            'verified_channels': max(1, int(20 * 0.3)), 'avg_views': 15000 if word_count == 1 else 8000,
+            'keyword_in_title': int(20 * optimized_ratio), 'recent_videos': 3,
             'competition_level': competition_level
         }
     
     def _process_competition_data(self, videos: list, keyword: str) -> dict:
         """Обработка данных конкуренции"""
-        analysis = {
-            'total_videos': len(videos),
-            'optimized_titles': 0,
-            'high_view_videos': 0,
-            'verified_channels': 0,
-            'avg_views': 0,
-            'keyword_in_title': 0,
-            'recent_videos': 0
-        }
-        
+        analysis = {'total_videos': len(videos), 'optimized_titles': 0, 'high_view_videos': 0, 'verified_channels': 0, 'avg_views': 0, 'keyword_in_title': 0, 'recent_videos': 0}
         total_views = 0
         keyword_lower = keyword.lower()
         
         for video in videos:
             title = video.get('title', '').lower()
-            # ИСПРАВЛЕНО: Более строгая проверка на вхождение ключевой фразы
             if keyword_lower in title:
                 analysis['optimized_titles'] += 1
                 analysis['keyword_in_title'] += 1
             
             views = self._extract_views(video.get('view_count_text', '0'))
             total_views += views
-            
-            if views > 100000:
-                analysis['high_view_videos'] += 1
-            
-            channel = video.get('channel', {})
-            if channel.get('verified', False):
-                analysis['verified_channels'] += 1
-            
-            published_date = video.get('published_date', '')
-            if self._is_recent(published_date):
-                analysis['recent_videos'] += 1
+            if views > 100000: analysis['high_view_videos'] += 1
+            if video.get('channel', {}).get('verified', False): analysis['verified_channels'] += 1
+            if self._is_recent(video.get('published_date', '')): analysis['recent_videos'] += 1
         
-        if analysis['total_videos'] > 0:
-            analysis['avg_views'] = total_views // analysis['total_videos']
-        
+        if analysis['total_videos'] > 0: analysis['avg_views'] = total_views // analysis['total_videos']
         return analysis
     
     def _extract_views(self, views_str: str) -> int:
-        """ИСПРАВЛЕНО: Надежное извлечение количества просмотров из текстового формата."""
-        if not views_str or not isinstance(views_str, str):
-            return 0
-        
+        """Надежное извлечение количества просмотров из текстового формата."""
+        if not views_str or not isinstance(views_str, str): return 0
         views_str = views_str.lower().replace(',', '').replace(' views', '').strip()
         num_part = re.match(r'[\d.]+', views_str)
-        if not num_part:
-            return 0
-        
+        if not num_part: return 0
         num = float(num_part.group(0))
-        
-        if 'k' in views_str:
-            return int(num * 1000)
-        if 'm' in views_str:
-            return int(num * 1000000)
-        if 'b' in views_str:
-            return int(num * 1000000000)
-            
+        if 'k' in views_str: return int(num * 1000)
+        if 'm' in views_str: return int(num * 1000000)
+        if 'b' in views_str: return int(num * 1000000000)
         return int(num)
     
     def _is_recent(self, date_str: str) -> bool:
         """Проверка свежести видео"""
-        if not date_str:
-            return False
-        
+        if not date_str: return False
         recent_indicators = ['day', 'days', 'week', 'weeks', 'hour', 'hours', 'час', 'день', 'недел']
         return any(indicator in date_str.lower() for indicator in recent_indicators)
     
@@ -1259,15 +1123,8 @@ class YouTubeTagAnalyzer:
             optimized_ratio = analysis.get('optimized_titles', 0) / total
             high_views_ratio = analysis.get('high_view_videos', 0) / total
             verified_ratio = analysis.get('verified_channels', 0) / total
-            
             avg_views_factor = min(analysis.get('avg_views', 0) / 500000, 1.0)
-            
-            competition_score = min(int((
-                optimized_ratio * 0.3 +
-                high_views_ratio * 0.25 +
-                verified_ratio * 0.2 +
-                avg_views_factor * 0.25
-            ) * 100), 100)
+            competition_score = min(int((optimized_ratio * 0.3 + high_views_ratio * 0.25 + verified_ratio * 0.2 + avg_views_factor * 0.25) * 100), 100)
         
         if total > 0:
             keyword_optimization = analysis.get('keyword_in_title', 0) / total
@@ -1275,47 +1132,28 @@ class YouTubeTagAnalyzer:
         else:
             seo_score = 50
         
-        volume_score = min(math.log10(max(search_volume, 1)) * 20, 100) # УЛУЧШЕНО: скорректирован вес
+        volume_score = min(math.log10(max(search_volume, 1)) * 20, 100)
         competition_inverted = 100 - competition_score
+        overall_score = min(int(volume_score * 0.4 + competition_inverted * 0.35 + seo_score * 0.25), 100)
         
-        overall_score = min(int(
-            volume_score * 0.4 +
-            competition_inverted * 0.35 +
-            seo_score * 0.25
-        ), 100)
+        if competition_score <= 20: difficulty = "Очень низкая 🟢"
+        elif competition_score <= 40: difficulty = "Низкая 🟢"
+        elif competition_score <= 60: difficulty = "Средняя 🟡"
+        elif competition_score <= 80: difficulty = "Высокая 🟠"
+        else: difficulty = "Очень высокая 🔴"
         
-        if competition_score <= 20:
-            difficulty = "Очень низкая 🟢"
-        elif competition_score <= 40:
-            difficulty = "Низкая 🟢"
-        elif competition_score <= 60:
-            difficulty = "Средняя 🟡"
-        elif competition_score <= 80:
-            difficulty = "Высокая 🟠"
-        else:
-            difficulty = "Очень высокая 🔴"
-        
-        return TagScore(
-            keyword=keyword,
-            search_volume=search_volume,
-            competition_score=competition_score,
-            seo_score=seo_score,
-            overall_score=overall_score,
-            difficulty=difficulty
-        )
+        return TagScore(keyword=keyword, search_volume=search_volume, competition_score=competition_score, seo_score=seo_score, overall_score=overall_score, difficulty=difficulty)
     
     def analyze_keyword(self, keyword: str) -> TagScore:
         """Полный анализ ключевого слова"""
         search_volume = self.get_search_volume_serpapi(keyword)
         competition_analysis = self.analyze_competition_serpapi(keyword)
-        
         return self.calculate_scores(keyword, competition_analysis, search_volume)
     
     def analyze_multiple_keywords(self, keywords: list) -> list:
         """Анализ нескольких ключевых слов"""
         results = []
-        if not keywords:
-             return []
+        if not keywords: return []
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -1323,20 +1161,15 @@ class YouTubeTagAnalyzer:
             try:
                 status_text.text(f"🏷️ Анализирую тег: {keyword} ({i+1}/{len(keywords)})")
                 progress_bar.progress((i + 1) / len(keywords))
-                
                 result = self.analyze_keyword(keyword)
                 results.append(result)
-                
-                if self.use_serpapi:
-                    time.sleep(0.7) # Уменьшена задержка
-                    
+                if self.use_serpapi: time.sleep(0.7)
             except Exception as e:
                 st.warning(f"Ошибка анализа '{keyword}': {e}")
                 continue
         
         progress_bar.empty()
         status_text.empty()
-        
         return sorted(results, key=lambda x: x.overall_score, reverse=True)
 
 class ContentStrategist:
@@ -1350,32 +1183,24 @@ class ContentStrategist:
                 st.error(f"Ошибка инициализации OpenAI: {e}")
                 self.use_openai = False
 
-
     def get_strategy(self, keyword: str, comp_analysis: dict, trends_data: dict, df: pd.DataFrame, cache: CacheManager):
-        if not comp_analysis: # Проверка на пустой анализ
-            return "Недостаточно данных для генерации стратегии."
-
+        if not comp_analysis: return "Недостаточно данных для генерации стратегии."
         cache_key = None
         if self.use_openai:
-            # УЛУЧШЕНО: более надежный ключ кэша
             cache_key = cache.generate_key('openai_v4', keyword, self.model, comp_analysis, trends_data)
             if cached_strategy := cache.get(cache_key):
                 st.toast("🤖 AI Стратегия загружена из кэша!", icon="🧠")
                 return cached_strategy
         
-        if self.use_openai:
-            strategy = self._get_ai_strategy(keyword, comp_analysis, trends_data, df)
-        else:
-            strategy = self._get_rule_based_strategy(keyword, comp_analysis, df)
+        if self.use_openai: strategy = self._get_ai_strategy(keyword, comp_analysis, trends_data, df)
+        else: strategy = self._get_rule_based_strategy(keyword, comp_analysis, df)
         
         if self.use_openai and cache_key and "Ошибка" not in strategy:
             cache.set(cache_key, strategy, 'openai')
-        
         return strategy
 
     def _get_rule_based_strategy(self, keyword: str, comp_analysis: dict, df: pd.DataFrame):
         """Улучшенная базовая стратегия без AI"""
-        
         if not df.empty:
             titles = df['title'].tolist()
             popular_words = extract_keywords_from_titles(titles)
@@ -1386,28 +1211,18 @@ class ContentStrategist:
         competition_level = comp_analysis.get('competition_level', 'Неизвестно')
         avg_views = comp_analysis.get('avg_views', 0)
         shorts_percentage = comp_analysis.get('shorts_percentage', 0)
-        
         strategy_parts = []
         
-        if 'низкая' in competition_level.lower():
-            verdict = "🎯 **ОТЛИЧНАЯ ВОЗМОЖНОСТЬ!** Низкая конкуренция дает хорошие шансы для роста."
-        elif 'средняя' in competition_level.lower():
-            verdict = "⚡ **ХОРОШИЕ ПЕРСПЕКТИВЫ** с правильным подходом. Нужна качественная стратегия."
-        else:
-            verdict = "🔥 **ВЫСОКАЯ КОНКУРЕНЦИЯ** - требуется уникальный подход и высокое качество контента."
-        
+        if 'низкая' in competition_level.lower(): verdict = "🎯 **ОТЛИЧНАЯ ВОЗМОЖНОСТЬ!** Низкая конкуренция дает хорошие шансы для роста."
+        elif 'средняя' in competition_level.lower(): verdict = "⚡ **ХОРОШИЕ ПЕРСПЕКТИВЫ** с правильным подходом. Нужна качественная стратегия."
+        else: verdict = "🔥 **ВЫСОКАЯ КОНКУРЕНЦИЯ** - требуется уникальный подход и высокое качество контента."
         strategy_parts.append(f"### 🎯 Вердикт\n{verdict}")
         
         insights = []
-        if avg_views < 50000:
-            insights.append("💡 Средние просмотры невысокие - есть возможность выделиться качеством")
-        if shorts_percentage > 50:
-            insights.append("📱 Много Shorts в нише - рассмотрите этот формат")
-        if top_words:
-            insights.append(f"🔤 Популярные слова в заголовках: {', '.join(top_words[:3])}")
-        
-        if insights:
-             strategy_parts.append("### 🔍 Ключевые инсайты\n" + "\n".join(insights))
+        if avg_views < 50000: insights.append("💡 Средние просмотры невысокие - есть возможность выделиться качеством")
+        if shorts_percentage > 50: insights.append("📱 Много Shorts в нише - рассмотрите этот формат")
+        if top_words: insights.append(f"🔤 Популярные слова в заголовках: {', '.join(top_words[:3])}")
+        if insights: strategy_parts.append("### 🔍 Ключевые инсайты\n- " + "\n- ".join(insights))
 
         content_ideas = [
             f"**Полное руководство по {keyword}** - подробный туториал для начинающих",
@@ -1416,13 +1231,8 @@ class ContentStrategist:
             f"**Как начать в {keyword} без опыта** - пошаговый план",
             f"**Секреты {keyword}, о которых не говорят** - инсайдерская информация"
         ]
-        
         if shorts_percentage > 30:
-            content_ideas.extend([
-                f"**{keyword} за 60 секунд** - короткие обучающие видео",
-                f"**Быстрые советы по {keyword}** - серия коротких роликов"
-            ])
-        
+            content_ideas.extend([f"**{keyword} за 60 секунд** - короткие обучающие видео", f"**Быстрые советы по {keyword}** - серия коротких роликов"])
         strategy_parts.append("### 💡 Идеи для контента\n- " + "\n- ".join(content_ideas))
         
         optimization_tips = [
@@ -1432,16 +1242,13 @@ class ContentStrategist:
             "📝 **Подробные описания** - добавьте тайм-коды и полезные ссылки",
             "🏷️ **Правильные теги** - микс популярных и нишевых тегов"
         ]
-        
         strategy_parts.append("### 🚀 Рекомендации по оптимизации\n- " + "\n- ".join(optimization_tips))
-        
         return "\n\n".join(strategy_parts)
     
     def _get_ai_strategy(self, keyword: str, comp_analysis: dict, trends_data: dict, df: pd.DataFrame):
         st.toast("🤖 Отправляю данные на анализ в OpenAI...", icon="🧠")
         
-        top_titles = []
-        top_channels = []
+        top_titles, top_channels = [], []
         if not df.empty:
             top_videos = df.nlargest(10, 'views')
             top_titles = top_videos['title'].tolist()
@@ -1450,8 +1257,7 @@ class ContentStrategist:
         trends_info = "Нет данных"
         if trends_data:
             trends_info = f"{trends_data.get('trend_direction', 'Неизвестно')}"
-            if 'recent_avg' in trends_data:
-                trends_info += f" (текущий интерес: {trends_data['recent_avg']:.0f})"
+            if 'recent_avg' in trends_data: trends_info += f" (текущий интерес: {trends_data['recent_avg']:.0f})"
         
         prompt = f"""
         Ты — ведущий YouTube-стратег с опытом более 10 лет. Проведи глубокий анализ ниши и создай детальную стратегию продвижения.
@@ -1482,31 +1288,17 @@ class ContentStrategist:
         Создай подробную стратегию в формате Markdown с следующими разделами:
 
         1. **🎯 Стратегический вердикт** - оценка перспектив ниши и главная рекомендация (2-3 предложения)
-
         2. **📊 Анализ возможностей** - детальный разбор сильных и слабых сторон ниши
-
-        3. **🎬 Контент-стратегия** - 7 конкретных идей для видео с форматами:
-           - Заголовок
-           - Краткое описание (1-2 предложения)
-           - Формат (туториал/обзор/кейс/и т.д.)
-           - Примерная длительность
-
+        3. **🎬 Контент-стратегия** - 7 конкретных идей для видео с форматами (Заголовок, Краткое описание, Формат, Примерная длительность)
         4. **🚀 Тактика роста** - конкретные действия для первых 30 дней
-
         5. **💰 Монетизация** - 3 способа заработка + потенциальные риски
-
         6. **🏷️ SEO и оптимизация** - рекомендации по тегам, превью, времени публикации
 
         Будь конкретным, креативным и практичным. Фокусируйся на actionable советах.
         """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=2000
-            )
+            response = self.client.chat.completions.create(model=self.model, messages=[{"role": "user", "content": prompt}], temperature=0.7, max_tokens=2000)
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Ошибка вызова OpenAI: {e}", exc_info=True)
@@ -1519,670 +1311,158 @@ def main():
     
     with st.sidebar:
         st.header("⚙️ Настройки")
-        
         st.subheader("🔑 YouTube API")
-        youtube_api_key = st.text_input(
-            "YouTube API Key",
-            type="password",
-            help="Получите ключ в Google Cloud Console"
-        )
+        youtube_api_key = st.text_input("YouTube API Key", type="password", help="Получите ключ в Google Cloud Console", key="youtube_api_key")
         
         if youtube_api_key:
-            if validate_youtube_api_key(youtube_api_key):
-                st.success("✅ YouTube API ключ выглядит корректно")
-            else:
-                st.warning("⚠️ Формат ключа может быть неверным")
-                st.info("💡 YouTube ключи обычно начинаются с 'AIza...' и содержат 39 символов")
+            if validate_youtube_api_key(youtube_api_key): st.success("✅ YouTube API ключ выглядит корректно")
+            else: st.warning("⚠️ Формат ключа может быть неверным")
         
         st.markdown("---")
-        
         st.subheader("🤖 AI-стратег")
-        use_openai = st.toggle("Включить AI-анализ (OpenAI)", value=True)
-        
-        openai_api_key = ""
-        openai_model = "gpt-4o-mini"
-        
+        use_openai = st.toggle("Включить AI-анализ (OpenAI)", value=True, key="use_openai")
+        openai_api_key, openai_model = "", "gpt-4o-mini"
         if use_openai:
-            openai_api_key = st.text_input(
-                "OpenAI API Key",
-                type="password",
-                help="Ключ для генерации AI-стратегий"
-            )
-            
+            openai_api_key = st.text_input("OpenAI API Key", type="password", help="Ключ для генерации AI-стратегий", key="openai_api_key")
             if openai_api_key:
-                if validate_openai_api_key(openai_api_key):
-                    st.success("✅ OpenAI API ключ валиден")
-                else:
-                    st.error("❌ Неверный OpenAI API ключ")
-                    st.info("💡 Ключ должен начинаться с 'sk-'")
-            
-            openai_model = st.selectbox(
-                "Модель OpenAI",
-                ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-                index=1,
-                help="gpt-4o-mini - быстрее и дешевле"
-            )
+                if validate_openai_api_key(openai_api_key): st.success("✅ OpenAI API ключ валиден")
+                else: st.error("❌ Неверный OpenAI API ключ")
+            openai_model = st.selectbox("Модель OpenAI", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"], index=1, help="gpt-4o-mini - быстрее и дешевле", key="openai_model")
         
         st.markdown("---")
-        
         st.subheader("🏷️ Анализ тегов")
-        use_serpapi = st.toggle("Включить продвинутый анализ тегов (SerpAPI)", value=False)
-        
+        use_serpapi = st.toggle("Включить продвинутый анализ тегов (SerpAPI)", value=False, key="use_serpapi")
         serpapi_key = ""
         if use_serpapi:
-            serpapi_key = st.text_input(
-                "SerpAPI Key",
-                type="password",
-                help="Ключ для детального анализа тегов и конкурентов"
-            )
-            
+            serpapi_key = st.text_input("SerpAPI Key", type="password", help="Ключ для детального анализа тегов и конкурентов", key="serpapi_key")
             if serpapi_key:
-                if validate_serpapi_key(serpapi_key):
-                    st.success("✅ SerpAPI ключ выглядит корректно")
-                else:
-                    st.warning("⚠️ Формат ключа может быть неверным")
-            
-            st.info("💡 SerpAPI дает 100 бесплатных запросов/месяц")
+                if validate_serpapi_key(serpapi_key): st.success("✅ SerpAPI ключ выглядит корректно")
+                else: st.warning("⚠️ Формат ключа может быть неверным")
         
         st.markdown("---")
-        
         st.subheader("🔍 Параметры анализа")
-        max_results = st.slider("Видео для анализа", 20, 200, 100, 10)
-        
-        date_range_options = {
-            "За все время": None,
-            "За последний год": 365,
-            "За 6 месяцев": 180,
-            "За 3 месяца": 90,
-            "За месяц": 30
-        }
-        
-        selected_date_range = st.selectbox(
-            "Период анализа:",
-            list(date_range_options.keys()),
-            index=1
-        )
+        max_results = st.slider("Видео для анализа", 20, 200, 100, 10, key="max_results")
+        date_range_options = {"За все время": None, "За последний год": 365, "За 6 месяцев": 180, "За 3 месяца": 90, "За месяц": 30}
+        selected_date_range = st.selectbox("Период анализа:", list(date_range_options.keys()), index=1, key="date_range")
         days_limit = date_range_options[selected_date_range]
         
         if not youtube_api_key:
             st.warning("👆 Введите YouTube API ключ для начала работы")
-            st.info("📚 [Как получить API ключ](https://developers.google.com/youtube/v3/getting-started)")
             st.stop()
         
         cache = CacheManager()
-        
         st.markdown("---")
         st.subheader("💾 Управление кэшем")
-        
         cache_info = cache.get_cache_info()
         if 'error' not in cache_info:
-            st.info(f"""
-            **📊 Статистика:**
-            • Записей: {cache_info['total_records']}
-            • Размер: {cache_info['total_size_mb']} MB
-            • Попадания: {cache.stats['hits']}
-            • Промахи: {cache.stats['misses']}
-            • Hit Rate: {cache_info['hit_rate']}%
-            """)
-            
-            if cache_info.get('categories'):
-                with st.expander("📁 Детализация по категориям"):
-                    for cat, info in cache_info['categories'].items():
-                        st.text(f"• {cat}: {info['count']} ({info['size_mb']} MB)")
+            st.info(f"Записей: {cache_info.get('total_records', 0)}, Размер: {cache_info.get('total_size_mb', 0)} MB, Hit Rate: {cache_info.get('hit_rate', 0)}%")
         
         col1, col2 = st.columns(2)
-        
         with col1:
             if st.button("🧹 Очистить устаревший"):
-                deleted = cache.clean_expired()
-                st.success(f"Удалено {deleted} записей")
+                st.success(f"Удалено {cache.clean_expired()} записей")
                 st.rerun()
-        
         with col2:
             if st.button("💥 Очистить весь кэш"):
-                try:
-                    if cache.db_path.exists():
-                        cache.db_path.unlink()
-                    st.success("Кэш полностью очищен")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Ошибка очистки: {e}")
+                if cache.db_path.exists(): cache.db_path.unlink(missing_ok=True)
+                st.success("Кэш полностью очищен"); st.rerun()
         
         st.markdown("---")
-        st.subheader("⚙️ Производительность")
-        
-        show_advanced = st.checkbox("Показать расширенные настройки")
-        if show_advanced:
-            request_delay = st.slider(
-                "Задержка между запросами (сек)",
-                0.1, 2.0, REQUEST_DELAY, 0.1,
-                help="Увеличьте для снижения нагрузки на API"
-            )
+        st.info("Автор: [Telegram](https://t.me/i_gma)")
+
+    keyword = st.text_input("🎯 Введите тему для анализа", placeholder="Например: n8n автоматизация, фотография для начинающих...", key="keyword_input")
+    
+    col1, col2, col3 = st.columns(3)
+    examples = ["python для начинающих", "монтаж видео", "инвестиции в акции"]
+    if col1.button(f"📌 {examples[0]}", use_container_width=True): st.session_state.keyword_input = examples[0]; st.rerun()
+    if col2.button(f"📌 {examples[1]}", use_container_width=True): st.session_state.keyword_input = examples[1]; st.rerun()
+    if col3.button(f"📌 {examples[2]}", use_container_width=True): st.session_state.keyword_input = examples[2]; st.rerun()
             
-            max_retries = st.slider(
-                "Максимум повторных попыток",
-                1, 5, MAX_RETRIES,
-                help="Количество попыток при ошибках API"
-            )
-            
-            globals()['REQUEST_DELAY'] = request_delay
-            globals()['MAX_RETRIES'] = max_retries
-        
-        st.markdown("---")
-        st.subheader("👨‍💻 Автор")
-        st.markdown("""
-        **Связаться:**
-        - 💬 [Telegram](https://t.me/i_gma)
-        - 📢 [Канал о AI](https://t.me/igm_a)
-        - 🔗 [GitHub](https://github.com/yourusername)
-        """)
-
-    st.markdown("### 🎯 Введите тему для анализа")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        keyword = st.text_input(
-            "",
-            placeholder="Например: n8n автоматизация, фотография для начинающих, криптовалюты...",
-            help="Введите тему или ключевые слова для анализа YouTube ниши"
-        )
-    
-    with col2:
-        analyze_button = st.button(
-            "🚀 Глубокий анализ!",
-            type="primary",
-            use_container_width=True,
-            disabled=not keyword
-        )
-
-    st.markdown("**💡 Примеры тем для анализа:**")
-    example_cols = st.columns(3)
-    
-    examples = [
-        "python для начинающих",
-        "монтаж видео",
-        "инвестиции в акции"
-    ]
-    
-    for i, example in enumerate(examples):
-        if example_cols[i % 3].button(f"📌 {example}", key=f"example_{i}"):
-            keyword = example
-            st.session_state.keyword = example # Сохраняем в state для rerun
-            st.rerun()
-
-    # ИСПРАВЛЕНО: Запускаем анализ, если keyword есть (в том числе после нажатия на пример)
-    if 'keyword' in st.session_state and st.session_state.keyword:
-        keyword = st.session_state.keyword
-        # Сбрасываем, чтобы не запускалось повторно без нажатия кнопки
-        del st.session_state.keyword 
-        analyze_button = True
-
-
-    if analyze_button and keyword:
+    if st.button("🚀 Глубокий анализ!", type="primary", use_container_width=True, disabled=not keyword):
         try:
             analyzer = YouTubeAnalyzer(youtube_api_key, cache)
-            trends_analyzer = AdvancedTrendsAnalyzer(cache)
-            
-            # УЛУЧШЕНО: Проверка соединения перед долгим анализом
-            if not analyzer.test_connection():
-                st.stop()
+            if not analyzer.test_connection(): st.stop()
             
             spinner_text = "🌊 Анализирую YouTube..."
-            if use_openai and openai_api_key and validate_openai_api_key(openai_api_key):
-                spinner_text += " Привлекаю AI..."
+            if use_openai and openai_api_key and validate_openai_api_key(openai_api_key): spinner_text += " Привлекаю AI..."
 
             with st.spinner(spinner_text):
-                published_after_date = None
-                if days_limit:
-                    published_after_date = (datetime.now() - timedelta(days=days_limit)).isoformat("T") + "Z"
-                
+                published_after_date = (datetime.now() - timedelta(days=days_limit)).isoformat("T") + "Z" if days_limit else None
                 videos = analyzer.search_videos(keyword, max_results, published_after=published_after_date)
                 
-                if videos is None:
-                    st.error("❌ Ошибка при получении данных из YouTube API. Проверьте консоль и лог-файл.")
-                    st.stop()
-                
                 if not videos:
-                    st.warning(f"🔍 Не найдено видео по запросу '{keyword}'. Попробуйте:")
-                    st.markdown("""
-                    - Изменить ключевое слово (сделать его более общим или специфичным)
-                    - Увеличить период анализа до 'За все время'
-                    - Попробовать запрос на другом языке
-                    """)
+                    st.warning(f"🔍 Не найдено видео по запросу '{keyword}'. Попробуйте изменить ключевое слово или период анализа.")
                     st.stop()
                 
                 comp_analysis, df = analyzer.analyze_competition(videos)
+                trends_analyzer = AdvancedTrendsAnalyzer(cache)
                 trends_data = trends_analyzer.analyze_keyword_trends(keyword)
                 
-                strategist = ContentStrategist(
-                    openai_api_key if use_openai and validate_openai_api_key(openai_api_key) else None,
-                    openai_model if use_openai else None
-                )
+                strategist = ContentStrategist(openai_api_key if use_openai and validate_openai_api_key(openai_api_key) else None, openai_model if use_openai else None)
                 strategy_output = strategist.get_strategy(keyword, comp_analysis, trends_data, df, cache)
 
-            st.markdown("---")
             st.markdown(f"# 📊 Анализ ниши: **{keyword}**")
             
-            st.markdown("### 🎯 Ключевые показатели")
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            with col1:
-                st.metric(
-                    "📹 Видео",
-                    f"{len(df)}",
-                    help="Количество проанализированных видео"
-                )
-            
-            with col2:
-                competition_level = comp_analysis.get('competition_level', 'N/A')
-                st.metric(
-                    "🏆 Конкуренция",
-                    competition_level.split()[0],
-                    help=f"Полный статус: {competition_level}"
-                )
-            
-            with col3:
-                avg_views = comp_analysis.get('avg_views', 0)
-                st.metric(
-                    "👀 Средние просмотры",
-                    safe_format_number(int(avg_views)),
-                    help=f"Точное значение: {int(avg_views):,}"
-                )
-            
-            with col4:
-                engagement = comp_analysis.get('engagement_rate', 0)
-                st.metric(
-                    "💬 Активность",
-                    f"{engagement:.1f}%",
-                    help="Насколько активно зрители ставят лайки и комментируют"
-                )
-            
-            with col5:
-                channels = comp_analysis.get('unique_channels', 0)
-                st.metric(
-                    "📺 Каналов",
-                    channels,
-                    help="Количество уникальных каналов в выборке"
-                )
+            cols = st.columns(5)
+            cols[0].metric("📹 Видео", f"{len(df)}")
+            cols[1].metric("🏆 Конкуренция", comp_analysis.get('competition_level', 'N/A').split()[0])
+            cols[2].metric("👀 Сред. просмотры", safe_format_number(int(comp_analysis.get('avg_views', 0))))
+            cols[3].metric("💬 Активность", f"{comp_analysis.get('engagement_rate', 0):.1f}%")
+            cols[4].metric("📺 Каналов", comp_analysis.get('unique_channels', 0))
 
-            st.markdown("### 📈 Детальная статистика")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.metric(
-                    "🔥 Топ-10 видео",
-                    safe_format_number(int(comp_analysis.get('top_10_avg_views', 0))),
-                    help="Средние просмотры у лучших 10 видео"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.metric(
-                    "📱 Короткие видео",
-                    f"{comp_analysis.get('shorts_percentage', 0):.0f}%",
-                    help="Процент коротких видео (до 1 минуты)"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col3:
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.metric(
-                    "🗓️ За неделю",
-                    f"{comp_analysis.get('videos_last_week', 0)} шт.",
-                    help="Сколько видео вышло за последнюю неделю"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col4:
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                avg_duration = comp_analysis.get('avg_duration', 0)
-                if avg_duration > 0:
-                    duration_str = f"{avg_duration:.1f} мин"
-                else:
-                    duration_str = "N/A"
-                st.metric(
-                    "⏱️ Средняя длина",
-                    duration_str,
-                    help="Средняя длина видео (без коротких)"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
-                "🎯 AI Советы",
-                "🏷️ Анализ тегов",
-                "📈 Популярность",
-                "🏆 Топ видео",
-                "📊 Подробная статистика"
-            ])
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 AI Советы", "🏷️ Анализ тегов", "📈 Популярность", "🏆 Топ видео", "📊 Статистика"])
 
             with tab1:
                 css_class = "openai-result" if strategist.use_openai else "custom-container"
-                st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                st.markdown(strategy_output)
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="{css_class}">{strategy_output}</div>', unsafe_allow_html=True)
                 
-                if not df.empty:
-                    st.markdown("### 🔍 Дополнительные инсайты")
-                    
-                    titles = df['title'].tolist()
-                    popular_words = extract_keywords_from_titles(titles)
-                    
-                    if popular_words:
-                        st.markdown("**🏷️ Популярные слова в заголовках:**")
-                        words_cols = st.columns(5)
-                        for i, (word, count) in enumerate(popular_words[:5]):
-                            words_cols[i].metric(word, count)
-                    
-                    top_channels_df = df.drop_duplicates(subset=['channel_id']).nlargest(10, 'subscribers')
-                    
-                    if not top_channels_df.empty:
-                        st.markdown("**📺 Ведущие каналы в нише (по подписчикам):**")
-                        st.dataframe(
-                            top_channels_df[['channel', 'subscribers_formatted', 'channel_video_count', 'channel_total_views']].rename(columns={
-                                'channel': 'Канал',
-                                'subscribers_formatted': 'Подписчиков',
-                                'channel_video_count': 'Всего видео',
-                                'channel_total_views': 'Всего просмотров'
-                            }),
-                            use_container_width=True
-                        )
-
             with tab2:
-                st.markdown("### 🏷️ Какие теги лучше использовать")
-                
-                all_tags = [tag.lower() for video in videos if 'tags' in video and video['tags'] for tag in video['tags']]
-                
+                all_tags = [tag.lower() for v in videos if v.get('tags') for tag in v['tags']]
                 if all_tags:
                     tag_popularity = Counter(all_tags)
+                    st.markdown("#### Выберите теги для детального анализа")
+                    selected_tags = st.multiselect("Популярные теги:", [t for t, c in tag_popularity.most_common(20)], default=[t for t,c in tag_popularity.most_common(5)])
+                    custom_tags = st.text_input("Добавьте свои теги через запятую:")
+                    if custom_tags: selected_tags.extend([t.strip().lower() for t in custom_tags.split(',') if t.strip()])
                     
-                    st.markdown("#### 📊 Популярные теги в нише")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("**🔥 Топ теги конкурентов:**")
-                        # УЛУЧШЕНО: Использование session_state для сохранения выбора
-                        if 'selected_tags' not in st.session_state:
-                            st.session_state.selected_tags = []
-                        
-                        for i, (tag, count) in enumerate(tag_popularity.most_common(10)):
-                            if st.checkbox(f"{tag} ({count} раз)", key=f"tag_{i}", value=(tag in st.session_state.selected_tags)):
-                                if tag not in st.session_state.selected_tags:
-                                    st.session_state.selected_tags.append(tag)
-                            elif tag in st.session_state.selected_tags:
-                                st.session_state.selected_tags.remove(tag)
-
-                    with col2:
-                        st.markdown("**➕ Добавить свои теги:**")
-                        custom_tags = st.text_area(
-                            "Введите теги через запятую:",
-                            placeholder="автоматизация, программирование, python",
-                            help="Добавьте свои теги для анализа",
-                            key="custom_tags_input"
-                        )
-                        
-                    current_selection = list(st.session_state.selected_tags)
-                    if custom_tags:
-                        custom_list = [tag.strip().lower() for tag in custom_tags.split(',') if tag.strip()]
-                        current_selection.extend(custom_list)
-                    
-                    # Убираем дубликаты
-                    current_selection = list(dict.fromkeys(current_selection))
-
-                    if current_selection:
-                        if st.button(f"🔍 Анализировать {len(current_selection)} тегов", type="primary"):
-                            tag_analyzer = YouTubeTagAnalyzer(
-                                serpapi_key if use_serpapi and validate_serpapi_key(serpapi_key) else None,
-                                cache
-                            )
-                            
-                            with st.spinner(f"🏷️ Анализирую эффективность {len(current_selection)} тегов..."):
-                                tag_results = tag_analyzer.analyze_multiple_keywords(current_selection[:20]) # Лимит на 20 тегов за раз
-                            
-                            if tag_results:
-                                st.markdown("#### 🎯 Результаты анализа тегов")
-                                
-                                results_data = []
-                                for result in tag_results:
-                                    results_data.append({
-                                        'Тег': result.keyword,
-                                        'Объем': safe_format_number(result.search_volume),
-                                        'Конкуренция': f"{result.competition_score}/100",
-                                        'SEO': f"{result.seo_score}/100",
-                                        'Оценка': f"{result.overall_score}/100",
-                                        'Сложность': result.difficulty
-                                    })
-                                
-                                results_df = pd.DataFrame(results_data)
-                                st.dataframe(results_df, use_container_width=True, hide_index=True)
-                                
-                                st.markdown("#### 💡 Рекомендуемые теги для использования")
-                                
-                                recommended_tags = [r.keyword for r in tag_results if r.overall_score >= 50]
-                                if recommended_tags:
-                                    st.code(", ".join(recommended_tags))
-                                else:
-                                    st.info("Нет тегов с высокой оценкой. Попробуйте менее конкурентные варианты.")
-
-                                csv_tags = pd.DataFrame([{
-                                    'Keyword': r.keyword,
-                                    'Search_Volume': r.search_volume,
-                                    'Competition_Score': r.competition_score,
-                                    'SEO_Score': r.seo_score,
-                                    'Overall_Score': r.overall_score,
-                                    'Difficulty': r.difficulty
-                                } for r in tag_results])
-                                
-                                csv_tags_export = csv_tags.to_csv(index=False).encode('utf-8')
-                                st.download_button(
-                                    "📥 Скачать анализ тегов (CSV)",
-                                    csv_tags_export,
-                                    f'tag_analysis_{keyword.replace(" ", "_")}.csv',
-                                    'text/csv'
-                                )
-                        
-                        if not use_serpapi:
-                            st.info("💡 **Совет**: Включите SerpAPI в настройках для более точных данных о популярности тегов!")
-                
+                    if st.button("🔍 Анализировать выбранные теги", type="secondary"):
+                        unique_tags_to_analyze = list(set(selected_tags))[:20]
+                        tag_analyzer = YouTubeTagAnalyzer(serpapi_key if use_serpapi and validate_serpapi_key(serpapi_key) else None, cache)
+                        with st.spinner(f"🏷️ Анализирую {len(unique_tags_to_analyze)} тегов..."):
+                            tag_results = tag_analyzer.analyze_multiple_keywords(unique_tags_to_analyze)
+                        if tag_results:
+                            results_df = pd.DataFrame([vars(r) for r in tag_results])
+                            st.dataframe(results_df[['keyword', 'search_volume', 'competition_score', 'seo_score', 'overall_score', 'difficulty']].rename(columns={'keyword':'Тег','search_volume':'Объем','competition_score':'Конкуренция','seo_score':'SEO','overall_score':'Оценка','difficulty':'Сложность'}), hide_index=True)
                 else:
-                    st.warning("🏷️ Теги не найдены в проанализированных видео. Добавьте свои теги в поле выше для анализа.")
+                    st.warning("Теги не найдены в проанализированных видео.")
 
-            # ... (остальные вкладки без изменений) ...
             with tab3:
                 if trends_data and 'interest_df' in trends_data and not trends_data['interest_df'].empty:
-                    st.markdown("### 📈 Как меняется популярность темы")
-                    
-                    interest_df = trends_data['interest_df']
-                    
-                    fig_trends = go.Figure()
-                    fig_trends.add_trace(go.Scatter(
-                        x=interest_df.index,
-                        y=interest_df[keyword],
-                        mode='lines+markers',
-                        name='Интерес',
-                        line=dict(color='#1f77b4', width=3),
-                        marker=dict(size=6),
-                        hovertemplate='<b>%{x}</b><br>Интерес: %{y}<extra></extra>'
-                    ))
-                    
-                    fig_trends.update_layout(
-                        title=f'Насколько популярна тема: "{keyword}"',
-                        xaxis_title='Дата',
-                        yaxis_title='Уровень интереса',
-                        hovermode='x unified',
-                        template='plotly_dark'
-                    )
-                    
-                    st.plotly_chart(fig_trends, use_container_width=True)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric(
-                            "📊 Тенденция",
-                            trends_data.get('trend_direction', 'Неизвестно')
-                        )
-                    
-                    with col2:
-                        current_interest = trends_data.get('current_interest', 0)
-                        st.metric(
-                            "🎯 Интерес сейчас",
-                            f"{current_interest:.0f}/100"
-                        )
-                    
-                    with col3:
-                        trend_strength = trends_data.get('trend_strength', 0) * 100
-                        st.metric(
-                            "⚡ Сила изменений",
-                            f"{trend_strength:.1f}%"
-                        )
-                    
-                    if 'top_queries' in trends_data and not trends_data['top_queries'].empty:
-                        st.markdown("### 🔍 Похожие запросы")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("**📊 Популярные запросы:**")
-                            top_queries = trends_data['top_queries'].head(10)
-                            for idx, row in top_queries.iterrows():
-                                st.write(f"• {row['query']} ({row['value']}%)")
-                        
-                        with col2:
-                            if 'rising_queries' in trends_data and not trends_data['rising_queries'].empty:
-                                st.markdown("**🚀 Растущие запросы:**")
-                                rising_queries = trends_data['rising_queries'].head(10)
-                                for idx, row in rising_queries.iterrows():
-                                    growth = row['value']
-                                    if growth == 'Breakout':
-                                        growth = '🔥 Взрыв'
-                                    st.write(f"• {row['query']} (+{growth})")
-                
+                    fig = px.line(trends_data['interest_df'], x=trends_data['interest_df'].index, y=keyword, title=f'Популярность темы: "{keyword}"')
+                    fig.update_layout(template='plotly_dark')
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.warning("📈 Данные Google Trends недоступны или тема слишком узкая")
-                    st.markdown("""
-                    **Возможные причины:**
-                    - Тема слишком специфичная для анализа трендов
-                    - Временные проблемы с Google Trends API
-                    - Недостаточно данных для анализа
-                    
-                    **Рекомендации:**
-                    - Попробуйте более общую тему
-                    - Используйте английские ключевые слова
-                    - Повторите попытку позже
-                    """)
+                    st.warning("📈 Данные Google Trends недоступны.")
 
             with tab4:
                 st.markdown("### 🏆 Топ видео по просмотрам")
-                
                 if not df.empty:
-                    top_videos = df.nlargest(20, 'views')
-                    
-                    for idx, video in top_videos.iterrows():
-                        with st.container():
+                    for _, video in df.nlargest(10, 'views').iterrows():
+                        with st.container(border=True):
                             col1, col2 = st.columns([1, 4])
-                            
-                            with col1:
-                                if video.get('thumbnail'):
-                                    st.image(video['thumbnail'])
-                                else:
-                                    st.write("🎬")
-                            
-                            with col2:
-                                st.markdown(f"""
-                                **[{video['title']}]({video['video_url']})**
-                                
-                                📺 **{video['channel']}** ({video['subscribers_formatted']} подписчиков)
-                                
-                                👀 **{video['views_formatted']} просмотров** • 
-                                👍 **{video['likes_formatted']} лайков** • 
-                                💬 **{safe_format_number(video['comments'])} комментариев** • 
-                                ⏱️ **{video['duration_formatted']}** • 
-                                {video['short_indicator']}
-                                
-                                📅 Опубликовано: {video['published'][:10]}
-                                """)
-                            
-                            st.markdown("---")
-                    
-                else:
-                    st.warning("Нет данных для отображения топ видео")
-
+                            with col1: st.image(video.get('thumbnail', ''))
+                            with col2: st.markdown(f"**[{video['title']}]({video['video_url']})**<br>📺 {video['channel']} ({video['subscribers_formatted']})<br>👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']}", unsafe_allow_html=True)
+            
             with tab5:
-                st.markdown("### 📊 Подробная статистика и графики")
-                
+                st.markdown("### 📊 Детальная статистика по найденным видео")
                 if not df.empty:
-                    st.markdown("#### 📈 Распределение просмотров")
-                    fig_views = px.histogram(
-                        df, x='views', nbins=30, title='Распределение просмотров видео',
-                        labels={'views': 'Просмотры', 'count': 'Количество видео'}
-                    )
-                    fig_views.update_layout(template='plotly_dark')
-                    st.plotly_chart(fig_views, use_container_width=True)
-                    
-                    st.markdown("#### 💝 Зависимость лайков от просмотров")
-                    fig_scatter = px.scatter(
-                        df, x='views', y='likes', hover_data=['title', 'channel'],
-                        title='Корреляция между просмотрами и лайками',
-                        labels={'views': 'Просмотры', 'likes': 'Лайки'}
-                    )
-                    fig_scatter.update_layout(template='plotly_dark')
-                    st.plotly_chart(fig_scatter, use_container_width=True)
-                    
-                    st.markdown("#### 📺 Анализ каналов (топ-15 по просмотрам в выборке)")
-                    channel_stats = df.groupby('channel').agg(
-                        Видео=('video_id', 'count'),
-                        Средние_просмотры=('views', 'mean'),
-                        Макс_просмотры=('views', 'max'),
-                        Подписчики=('subscribers', 'first'),
-                        Средние_лайки=('likes', 'mean')
-                    ).astype(int).sort_values('Средние_просмотры', ascending=False)
-                    st.dataframe(channel_stats.head(15), use_container_width=True)
-                    
-                    st.markdown("#### ⏰ Временной анализ публикаций")
-                    df_time = df.copy()
-                    df_time['published_date'] = pd.to_datetime(df_time['published']).dt.date
-                    daily_stats = df_time.groupby('published_date').agg(Количество_видео=('video_id', 'count')).reset_index()
-                    fig_time = px.line(
-                        daily_stats, x='published_date', y='Количество_видео',
-                        title='Количество видео по дням'
-                    )
-                    fig_time.update_layout(template='plotly_dark')
-                    st.plotly_chart(fig_time, use_container_width=True)
-                    
-                    st.markdown("#### 📥 Экспорт данных")
-                    export_df = df[[
-                        'title', 'channel', 'views', 'likes', 'comments', 
-                        'duration_formatted', 'published', 'video_url'
-                    ]].copy()
-                    
-                    export_df.columns = [
-                        'Заголовок', 'Канал', 'Просмотры', 'Лайки', 'Комментарии',
-                        'Длительность', 'Дата публикации', 'URL'
-                    ]
-                    
-                    csv_data = export_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        "📥 Скачать полные данные (CSV)", csv_data,
-                        f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv'
-                    )
-                else:
-                    st.warning("Нет данных для детального анализа")
+                    st.dataframe(df[['title', 'channel', 'views', 'likes', 'duration_formatted', 'published']].rename(columns={'title':'Заголовок','channel':'Канал','views':'Просмотры','likes':'Лайки','duration_formatted':'Длительность','published':'Дата'}), use_container_width=True)
+                    csv_data = df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
 
         except Exception as e:
             st.error(f"❌ Произошла непредвиденная ошибка: {str(e)}")
             logger.error(f"Критическая ошибка в main(): {e}", exc_info=True)
-            st.info("🔄 Попробуйте:")
-            st.markdown("""
-            - Проверить правильность и активность API ключей
-            - Изменить ключевое слово
-            - Уменьшить количество видео для анализа
-            - Очистить кэш в боковой панели и перезагрузить страницу (Ctrl+F5)
-            """)
 
 if __name__ == "__main__":
     main()
