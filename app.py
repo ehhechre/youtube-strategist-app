@@ -550,10 +550,8 @@ class YouTubeAnalyzer:
             return True
         except HttpError as e:
             logger.error(f"Тест соединения с YouTube API не удался: {e}")
-            if e.error_details:
-                 st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status} - {e.error_details[0]['reason']}. Проверьте ваш API ключ.")
-            else:
-                 st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status}. Проверьте ваш API ключ.")
+            details = e.error_details[0] if e.error_details else {}
+            st.error(f"❌ Ошибка подключения к YouTube: {e.resp.status} - {details.get('reason', 'Unknown')}. Проверьте ваш API ключ.")
             return False
         except Exception as e:
             logger.error(f"Неожиданная ошибка при тесте соединения с YouTube API: {e}")
@@ -566,9 +564,7 @@ class YouTubeAnalyzer:
                 st.warning("⚠️ Приближаемся к лимиту YouTube API квоты")
             
             response = retry_api_call(request_func)(*args, **kwargs).execute()
-            # Search = 100, Videos List = 1, Channels List = 1
-            # Это примерная оценка стоимости, для точной нужно анализировать сам запрос
-            self.quota_used += 1
+            self.quota_used += 1 
             return response
         
         except HttpError as e:
@@ -606,7 +602,7 @@ class YouTubeAnalyzer:
                     id=",".join(chunk_ids)
                 )
                 response = self._make_api_request(lambda: request)
-                self.quota_used += 1 # Корректируем квоту
+                self.quota_used += 1
 
                 for item in response.get('items', []):
                     stats = item.get('statistics', {})
@@ -648,7 +644,7 @@ class YouTubeAnalyzer:
             max_results = 500
             st.warning("⚠️ Максимальное количество видео ограничено до 500")
         
-        cache_key = self.cache.generate_key('search_v4', keyword, max_results, published_after)
+        cache_key = self.cache.generate_key('search_v5', keyword, max_results, published_after)
         if cached_data := self.cache.get(cache_key):
             st.toast("🚀 Результаты поиска загружены из кэша!", icon="⚡️")
             return cached_data
@@ -675,12 +671,12 @@ class YouTubeAnalyzer:
                 if next_page_token:
                     search_params['pageToken'] = next_page_token
                 
-                status_text.text(f"🔍 Найдено видео: {fetched_count}/{max_results}")
+                status_text.text(f"🔍 Ищем видео: {fetched_count}/{max_results}")
                 progress_bar.progress(fetched_count / max_results)
                 
                 request = self.youtube.search().list(**search_params)
                 search_response = self._make_api_request(lambda: request)
-                self.quota_used += 99 # Корректируем квоту (Search = 100)
+                self.quota_used += 99 
                 new_items = search_response.get('items', [])
                 
                 if not new_items:
@@ -705,7 +701,7 @@ class YouTubeAnalyzer:
             video_ids = [item['id']['videoId'] for item in video_snippets if 'videoId' in item.get('id', {})]
             channel_ids = list(set([item['snippet']['channelId'] for item in video_snippets]))
 
-            status_text.text("📊 Получаем детальную статистику каналов...")
+            status_text.text("📊 Получаем статистику каналов...")
             channel_stats = self.get_channel_stats(channel_ids)
             
             videos = []
@@ -720,7 +716,7 @@ class YouTubeAnalyzer:
                     id=','.join(chunk_ids)
                 )
                 stats_response = self._make_api_request(lambda: request)
-                self.quota_used += 1 # Корректируем квоту (Videos.list = 1)
+                self.quota_used += 1
                 all_video_details.extend(stats_response.get('items', []))
                 
                 if i + 50 < len(video_ids):
@@ -1219,9 +1215,9 @@ class ContentStrategist:
         strategy_parts.append(f"### 🎯 Вердикт\n{verdict}")
         
         insights = []
-        if avg_views < 50000: insights.append("💡 Средние просмотры невысокие - есть возможность выделиться качеством")
-        if shorts_percentage > 50: insights.append("📱 Много Shorts в нише - рассмотрите этот формат")
-        if top_words: insights.append(f"🔤 Популярные слова в заголовках: {', '.join(top_words[:3])}")
+        if avg_views < 50000: insights.append("Средние просмотры невысокие - есть возможность выделиться качеством")
+        if shorts_percentage > 50: insights.append("Много Shorts в нише - рассмотрите этот формат")
+        if top_words: insights.append(f"Популярные слова в заголовках: {', '.join(top_words[:3])}")
         if insights: strategy_parts.append("### 🔍 Ключевые инсайты\n- " + "\n- ".join(insights))
 
         content_ideas = [
@@ -1451,12 +1447,28 @@ def main():
                         with st.container(border=True):
                             col1, col2 = st.columns([1, 4])
                             with col1: st.image(video.get('thumbnail', ''))
-                            with col2: st.markdown(f"**[{video['title']}]({video['video_url']})**<br>📺 {video['channel']} ({video['subscribers_formatted']})<br>👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']}", unsafe_allow_html=True)
+                            # ИЗМЕНЕНО: Добавлена информация о подписчиках
+                            with col2: st.markdown(f"""
+                                **[{video['title']}]({video['video_url']})**<br>
+                                📺 **{video['channel']}** ({video['subscribers_formatted']} подписчиков)<br>
+                                👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']}
+                                """, unsafe_allow_html=True)
             
             with tab5:
                 st.markdown("### 📊 Детальная статистика по найденным видео")
                 if not df.empty:
-                    st.dataframe(df[['title', 'channel', 'views', 'likes', 'duration_formatted', 'published']].rename(columns={'title':'Заголовок','channel':'Канал','views':'Просмотры','likes':'Лайки','duration_formatted':'Длительность','published':'Дата'}), use_container_width=True)
+                    # ИЗМЕНЕНО: Добавлен столбец 'subscribers' и переименован
+                    display_df = df[['title', 'channel', 'subscribers', 'views', 'likes', 'duration_formatted', 'published']]
+                    st.dataframe(display_df.rename(columns={
+                        'title':'Заголовок',
+                        'channel':'Канал',
+                        'subscribers': 'Подписчики',
+                        'views':'Просмотры',
+                        'likes':'Лайки',
+                        'duration_formatted':'Длительность',
+                        'published':'Дата'
+                    }), use_container_width=True, hide_index=True)
+
                     csv_data = df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
 
