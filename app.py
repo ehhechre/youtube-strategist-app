@@ -676,11 +676,28 @@ def main():
 
     keyword = st.text_input("🎯 Введите тему для анализа", placeholder="Например: n8n автоматизация, фотография для начинающих...", key="keyword_input")
     
-    col1, col2, col3 = st.columns(3)
-    examples = ["python для начинающих", "монтаж видео", "инвестиции в акции"]
-    if col1.button(f"📌 {examples[0]}", use_container_width=True): st.session_state.keyword_input = examples[0]; st.rerun()
-    if col2.button(f"📌 {examples[1]}", use_container_width=True): st.session_state.keyword_input = examples[1]; st.rerun()
-    if col3.button(f"📌 {examples[2]}", use_container_width=True): st.session_state.keyword_input = examples[2]; st.rerun()
+   # Инициализация состояния для примеров
+if 'example_keyword' not in st.session_state:
+    st.session_state.example_keyword = None
+
+# Обработка нажатия на кнопку примера
+if st.session_state.example_keyword:
+    keyword = st.session_state.example_keyword
+    st.session_state.example_keyword = None  # Сбрасываем после использования
+else:
+    keyword = st.text_input("🎯 Введите тему для анализа", placeholder="Например: n8n автоматизация, фотография для начинающих...", key="keyword_input")
+
+col1, col2, col3 = st.columns(3)
+examples = ["python для начинающих", "монтаж видео", "инвестиции в акции"]
+if col1.button(f"📌 {examples[0]}", use_container_width=True): 
+    st.session_state.example_keyword = examples[0]
+    st.rerun()
+if col2.button(f"📌 {examples[1]}", use_container_width=True): 
+    st.session_state.example_keyword = examples[1]
+    st.rerun()
+if col3.button(f"📌 {examples[2]}", use_container_width=True): 
+    st.session_state.example_keyword = examples[2]
+    st.rerun()
             
     if st.button("🚀 Глубокий анализ!", type="primary", use_container_width=True, disabled=not keyword):
         try:
