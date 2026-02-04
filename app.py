@@ -293,6 +293,19 @@ class CacheManager:
             logger.error(f"Ошибка очистки кэша: {e}")
             return 0
 
+    def clear_all(self) -> bool:
+        """Полная очистка кэша"""
+        try:
+            with self.lock:
+                if self.db_path.exists():
+                    self.db_path.unlink()
+                    self._init_sqlite()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка полной очистки кэша: {e}")
+            return False
+
     def get_cache_info(self) -> dict:
         try:
             with self.lock:
@@ -627,15 +640,30 @@ class AdvancedTrendsAnalyzer:
             st.warning(f"Не удалось получить данные из Google Trends: {str(e)}")
             return None
 
-# --- 4. ГЛАВНЫЙ ИНТЕРФЕЙС ---
+# --- 4. ИНИЦИАЛИЗАЦИЯ SESSION STATE ---
+def init_session_state():
+    """Инициализация всех переменных session state"""
+    if 'example_keyword' not in st.session_state:
+        st.session_state.example_keyword = None
+    if 'current_keyword' not in st.session_state:
+        st.session_state.current_keyword = ""
+    if 'cache_manager' not in st.session_state:
+        st.session_state.cache_manager = CacheManager()
+
+# --- 5. ГЛАВНЫЙ ИНТЕРФЕЙС ---
 
 def main():
+    # Инициализация session state
+    init_session_state()
+    
     st.markdown('<h1 class="main-header">YouTube Data Strategist 📈</h1>', unsafe_allow_html=True)
+    
+    cache = st.session_state.cache_manager
     
     with st.sidebar:
         st.header("⚙️ Настройки")
         st.subheader("🔑 YouTube API")
-        youtube_api_key = st.text_input("YouTube API Key", type="password", help="Получите ключ в Google Cloud Console", key="youtube_api_key")
+        youtube_api_key = st.text_input("YouTube API Key", type="password", help="Получите ключ в Google Cloud Console", key="yt_api_key_input")
         
         if youtube_api_key:
             if validate_youtube_api_key(youtube_api_key):
@@ -645,16 +673,15 @@ def main():
         
         st.markdown("---")
         st.subheader("🔍 Параметры анализа")
-        max_results = st.slider("Видео для анализа", 20, 200, 100, 10, key="max_results")
+        max_results = st.slider("Видео для анализа", 20, 200, 100, 10, key="max_results_slider")
         date_range_options = {"За все время": None, "За последний год": 365, "За 6 месяцев": 180, "За 3 месяца": 90, "За месяц": 30}
-        selected_date_range = st.selectbox("Период анализа:", list(date_range_options.keys()), index=1, key="date_range")
+        selected_date_range = st.selectbox("Период анализа:", list(date_range_options.keys()), index=1, key="date_range_select")
         days_limit = date_range_options[selected_date_range]
         
         if not youtube_api_key:
             st.warning("👆 Введите YouTube API ключ для начала работы")
             st.stop()
         
-        cache = CacheManager()
         st.markdown("---")
         st.subheader("💾 Управление кэшем")
         cache_info = cache.get_cache_info()
@@ -663,43 +690,48 @@ def main():
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🧹 Очистить устаревший"):
-                st.success(f"Удалено {cache.clean_expired()} записей")
+            if st.button("🧹 Очистить устаревший", key="clear_expired_btn"):
+                expired = cache.clean_expired()
+                st.success(f"Удалено {expired} записей")
                 st.rerun()
         with col2:
-            if st.button("💥 Очистить весь кэш"):
-                if cache.db_path.exists(): cache.db_path.unlink(missing_ok=True)
-                st.success("Кэш полностью очищен"); st.rerun()
+            if st.button("💥 Очистить весь кэш", key="clear_all_cache_btn"):
+                if cache.clear_all():
+                    st.success("Кэш полностью очищен")
+                    st.rerun()
         
         st.markdown("---")
         st.info("Автор: [Telegram](https://t.me/i_gma)")
 
-    keyword = st.text_input("🎯 Введите тему для анализа", placeholder="Например: n8n автоматизация, фотография для начинающих...", key="keyword_input")
+    # Обработка выбора примера
+    if st.session_state.example_keyword:
+        keyword = st.session_state.example_keyword
+        st.session_state.current_keyword = keyword
+        st.session_state.example_keyword = None
+    else:
+        keyword = st.text_input(
+            "🎯 Введите тему для анализа", 
+            value=st.session_state.current_keyword,
+            placeholder="Например: n8n автоматизация, фотография для начинающих...",
+            key="main_keyword_input"
+        )
+        st.session_state.current_keyword = keyword
     
-   # Инициализация состояния для примеров
-if 'example_keyword' not in st.session_state:
-    st.session_state.example_keyword = None
-
-# Обработка нажатия на кнопку примера
-if st.session_state.example_keyword:
-    keyword = st.session_state.example_keyword
-    st.session_state.example_keyword = None  # Сбрасываем после использования
-else:
-    keyword = st.text_input("🎯 Введите тему для анализа", placeholder="Например: n8n автоматизация, фотография для начинающих...", key="keyword_input")
-
-col1, col2, col3 = st.columns(3)
-examples = ["python для начинающих", "монтаж видео", "инвестиции в акции"]
-if col1.button(f"📌 {examples[0]}", use_container_width=True): 
-    st.session_state.example_keyword = examples[0]
-    st.rerun()
-if col2.button(f"📌 {examples[1]}", use_container_width=True): 
-    st.session_state.example_keyword = examples[1]
-    st.rerun()
-if col3.button(f"📌 {examples[2]}", use_container_width=True): 
-    st.session_state.example_keyword = examples[2]
-    st.rerun()
+    # Кнопки с примерами
+    col1, col2, col3 = st.columns(3)
+    examples = ["python для начинающих", "монтаж видео", "инвестиции в акции"]
+    
+    if col1.button(f"📌 {examples[0]}", use_container_width=True, key="example_btn_1"): 
+        st.session_state.example_keyword = examples[0]
+        st.rerun()
+    if col2.button(f"📌 {examples[1]}", use_container_width=True, key="example_btn_2"): 
+        st.session_state.example_keyword = examples[1]
+        st.rerun()
+    if col3.button(f"📌 {examples[2]}", use_container_width=True, key="example_btn_3"): 
+        st.session_state.example_keyword = examples[2]
+        st.rerun()
             
-    if st.button("🚀 Глубокий анализ!", type="primary", use_container_width=True, disabled=not keyword):
+    if st.button("🚀 Глубокий анализ!", type="primary", use_container_width=True, disabled=not keyword, key="analyze_btn"):
         try:
             analyzer = YouTubeAnalyzer(youtube_api_key, cache)
             if not analyzer.test_connection():
@@ -739,11 +771,12 @@ if col3.button(f"📌 {examples[2]}", use_container_width=True):
             with tab2:
                 st.markdown("### 🏆 Топ-10 видео по просмотрам")
                 if not df.empty:
-                    for _, video in df.nlargest(10, 'views').iterrows():
+                    for idx, video in enumerate(df.nlargest(10, 'views').iterrows()):
+                        _, video = video
                         with st.container(border=True):
                             col1, col2 = st.columns([1, 4])
                             with col1:
-                                st.image(video.get('thumbnail', ''))
+                                st.image(video.get('thumbnail', ''), use_container_width=True)
                             with col2:
                                 st.markdown(f"""
                                 **[{video['title']}]({video['video_url']})**<br>
@@ -766,7 +799,7 @@ if col3.button(f"📌 {examples[2]}", use_container_width=True):
             with tab4:
                 st.markdown("### 🗂️ Все найденные видео")
                 if not df.empty:
-                    display_df = df[['title', 'channel', 'subscribers', 'views', 'likes', 'duration_formatted', 'short_indicator', 'video_url_markdown', 'published']]
+                    display_df = df[['title', 'channel', 'subscribers', 'views', 'likes', 'duration_formatted', 'short_indicator', 'video_url_markdown', 'published']].copy()
                     st.dataframe(display_df.rename(columns={
                         'title':'Заголовок',
                         'channel':'Канал',
@@ -780,7 +813,7 @@ if col3.button(f"📌 {examples[2]}", use_container_width=True):
                     }), use_container_width=True, hide_index=True)
 
                     csv_data = df.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
+                    st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv', key="download_csv_btn")
 
         except Exception as e:
             st.error(f"❌ Произошла непредвиденная ошибка: {str(e)}")
