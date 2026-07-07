@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build # ИСПРАВЛЕНО
+from googleapiclient.errors import HttpError # ИСПРАВЛЕНО
 from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
@@ -153,6 +153,13 @@ def validate_serpapi_key(api_key: str) -> bool:
     
     api_key = api_key.strip()
     return len(api_key) > 30 and all(c.isalnum() for c in api_key)
+
+def get_secret(name: str) -> str:
+    """Чтение ключа из st.secrets (Streamlit Cloud / .streamlit/secrets.toml), если задан"""
+    try:
+        return str(st.secrets.get(name, "") or "")
+    except Exception:
+        return ""
 
 def safe_format_number(num) -> str:
     """Безопасное форматирование чисел с обработкой ошибок"""
@@ -644,7 +651,7 @@ class YouTubeAnalyzer:
             max_results = 500
             st.warning("⚠️ Максимальное количество видео ограничено до 500")
         
-        cache_key = self.cache.generate_key('search_v5', keyword, max_results, published_after)
+        cache_key = self.cache.generate_key('search_v6', keyword, max_results, published_after)
         if cached_data := self.cache.get(cache_key):
             st.toast("🚀 Результаты поиска загружены из кэша!", icon="⚡️")
             return cached_data
@@ -769,7 +776,8 @@ class YouTubeAnalyzer:
                     'language': video_snippet.get('defaultLanguage', 'ru'),
                     'topics': topic_details.get('topicCategories', [])[:5],
                     'thumbnail': snippet_item['snippet'].get('thumbnails', {}).get('medium', {}).get('url', ''),
-                    'video_url': f"https://www.youtube.com/watch?v={video_id}"
+                    'video_url': f"https://www.youtube.com/watch?v={video_id}",
+                    'channel_url': f"https://www.youtube.com/channel/{channel_id}" if channel_id else ''
                 }
                 videos.append(video_data)
             
@@ -1169,8 +1177,9 @@ class YouTubeTagAnalyzer:
         return sorted(results, key=lambda x: x.overall_score, reverse=True)
 
 class ContentStrategist:
-    def __init__(self, openai_key=None, openai_model=None):
+    def __init__(self, openai_key=None, openai_model=None, personal_context=""):
         self.use_openai = bool(openai_key and openai_model)
+        self.personal_context = personal_context # Сохраняем личный контекст
         if self.use_openai:
             try:
                 self.client = openai.OpenAI(api_key=openai_key)
@@ -1183,7 +1192,7 @@ class ContentStrategist:
         if not comp_analysis: return "Недостаточно данных для генерации стратегии."
         cache_key = None
         if self.use_openai:
-            cache_key = cache.generate_key('openai_v4', keyword, self.model, comp_analysis, trends_data)
+            cache_key = cache.generate_key('openai_v4', keyword, self.model, comp_analysis, trends_data, self.personal_context) # Добавляем контекст в ключ кэша
             if cached_strategy := cache.get(cache_key):
                 st.toast("🤖 AI Стратегия загружена из кэша!", icon="🧠")
                 return cached_strategy
@@ -1255,8 +1264,13 @@ class ContentStrategist:
             trends_info = f"{trends_data.get('trend_direction', 'Неизвестно')}"
             if 'recent_avg' in trends_data: trends_info += f" (текущий интерес: {trends_data['recent_avg']:.0f})"
         
+        # Добавляем личный контекст в начало промпта
+        personal_context_str = ""
+        if self.personal_context:
+            personal_context_str = f"**МОЙ ЛИЧНЫЙ КОНТЕКСТ/ЗАДАЧА:**\n{self.personal_context}\n\n"
+
         prompt = f"""
-        Ты — ведущий YouTube-стратег с опытом более 10 лет. Проведи глубокий анализ ниши и создай детальную стратегию продвижения.
+        {personal_context_str}Ты — ведущий YouTube-стратег с опытом более 10 лет. Проведи глубокий анализ ниши и создай детальную стратегию продвижения.
 
         **АНАЛИЗИРУЕМАЯ ТЕМА:** "{keyword}"
 
@@ -1294,7 +1308,14 @@ class ContentStrategist:
         """
 
         try:
-            response = self.client.chat.completions.create(model=self.model, messages=[{"role": "user", "content": prompt}], temperature=0.7, max_tokens=2000)
+            params = {"model": self.model, "messages": [{"role": "user", "content": prompt}]}
+            if self.model.startswith('gpt-5'):
+                # GPT-5 (reasoning-модели): temperature не поддерживается, max_tokens заменён на max_completion_tokens
+                params["max_completion_tokens"] = 4000
+            else:
+                params["temperature"] = 0.7
+                params["max_tokens"] = 2000
+            response = self.client.chat.completions.create(**params)
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Ошибка вызова OpenAI: {e}", exc_info=True)
@@ -1309,21 +1330,42 @@ def main():
         st.header("⚙️ Настройки")
         st.subheader("🔑 YouTube API")
         youtube_api_key = st.text_input("YouTube API Key", type="password", help="Получите ключ в Google Cloud Console", key="youtube_api_key")
-        
-        if youtube_api_key:
+
+        if not youtube_api_key and get_secret("YOUTUBE_API_KEY"):
+            youtube_api_key = get_secret("YOUTUBE_API_KEY")
+            st.caption("🔐 Ключ загружен из Secrets")
+        elif youtube_api_key:
             if validate_youtube_api_key(youtube_api_key): st.success("✅ YouTube API ключ выглядит корректно")
             else: st.warning("⚠️ Формат ключа может быть неверным")
         
         st.markdown("---")
         st.subheader("🤖 AI-стратег")
         use_openai = st.toggle("Включить AI-анализ (OpenAI)", value=True, key="use_openai")
-        openai_api_key, openai_model = "", "gpt-4o-mini"
+        openai_api_key, openai_model = "", "gpt-5-mini"
+        personal_context = "" # Инициализация личного контекста
         if use_openai:
             openai_api_key = st.text_input("OpenAI API Key", type="password", help="Ключ для генерации AI-стратегий", key="openai_api_key")
-            if openai_api_key:
+            if not openai_api_key and get_secret("OPENAI_API_KEY"):
+                openai_api_key = get_secret("OPENAI_API_KEY")
+                st.caption("🔐 Ключ загружен из Secrets")
+            elif openai_api_key:
                 if validate_openai_api_key(openai_api_key): st.success("✅ OpenAI API ключ валиден")
                 else: st.error("❌ Неверный OpenAI API ключ")
-            openai_model = st.selectbox("Модель OpenAI", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"], index=1, help="gpt-4o-mini - быстрее и дешевле", key="openai_model")
+            
+            openai_model = st.selectbox(
+                "Модель OpenAI",
+                ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
+                index=1, # gpt-5-mini по умолчанию
+                help="gpt-5-mini — оптимально по цене/качеству, gpt-5 — максимум качества",
+                key="openai_model"
+            )
+
+            personal_context = st.text_area(
+                "Личный контекст для AI",
+                placeholder="Например: Я хочу создавать обучающие видео по Python для новичков, фокусируясь на коротких уроках и практических примерах.",
+                help="Добавьте информацию о ваших целях, аудитории, стиле контента, чтобы AI точнее адаптировал стратегию.",
+                key="personal_context"
+            )
         
         st.markdown("---")
         st.subheader("🏷️ Анализ тегов")
@@ -1331,7 +1373,10 @@ def main():
         serpapi_key = ""
         if use_serpapi:
             serpapi_key = st.text_input("SerpAPI Key", type="password", help="Ключ для детального анализа тегов и конкурентов", key="serpapi_key")
-            if serpapi_key:
+            if not serpapi_key and get_secret("SERPAPI_KEY"):
+                serpapi_key = get_secret("SERPAPI_KEY")
+                st.caption("🔐 Ключ загружен из Secrets")
+            elif serpapi_key:
                 if validate_serpapi_key(serpapi_key): st.success("✅ SerpAPI ключ выглядит корректно")
                 else: st.warning("⚠️ Формат ключа может быть неверным")
         
@@ -1394,7 +1439,12 @@ def main():
                 trends_analyzer = AdvancedTrendsAnalyzer(cache)
                 trends_data = trends_analyzer.analyze_keyword_trends(keyword)
                 
-                strategist = ContentStrategist(openai_api_key if use_openai and validate_openai_api_key(openai_api_key) else None, openai_model if use_openai else None)
+                # Передаем personal_context в ContentStrategist
+                strategist = ContentStrategist(
+                    openai_api_key if use_openai and validate_openai_api_key(openai_api_key) else None,
+                    openai_model if use_openai else None,
+                    personal_context if use_openai else ""
+                )
                 strategy_output = strategist.get_strategy(keyword, comp_analysis, trends_data, df, cache)
 
             st.markdown(f"# 📊 Анализ ниши: **{keyword}**")
@@ -1446,28 +1496,35 @@ def main():
                     for _, video in df.nlargest(10, 'views').iterrows():
                         with st.container(border=True):
                             col1, col2 = st.columns([1, 4])
+                            channel_link = video.get('channel_url', '') or f"https://www.youtube.com/channel/{video['channel_id']}"
                             with col1: st.image(video.get('thumbnail', ''))
-                            # ИЗМЕНЕНО: Добавлена информация о подписчиках
                             with col2: st.markdown(f"""
                                 **[{video['title']}]({video['video_url']})**<br>
-                                📺 **{video['channel']}** ({video['subscribers_formatted']} подписчиков)<br>
+                                📺 **[{video['channel']}]({channel_link})** ({video['subscribers_formatted']} подписчиков)<br>
                                 👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']}
                                 """, unsafe_allow_html=True)
             
             with tab5:
                 st.markdown("### 📊 Детальная статистика по найденным видео")
                 if not df.empty:
-                    # ИЗМЕНЕНО: Добавлен столбец 'subscribers' и переименован
-                    display_df = df[['title', 'channel', 'subscribers', 'views', 'likes', 'duration_formatted', 'published']]
-                    st.dataframe(display_df.rename(columns={
-                        'title':'Заголовок',
-                        'channel':'Канал',
-                        'subscribers': 'Подписчики',
-                        'views':'Просмотры',
-                        'likes':'Лайки',
-                        'duration_formatted':'Длительность',
-                        'published':'Дата'
-                    }), use_container_width=True, hide_index=True)
+                    display_df = df[['title', 'video_url', 'channel', 'channel_url', 'subscribers', 'views', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'title': st.column_config.TextColumn('Заголовок', width='large'),
+                            'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
+                            'channel': st.column_config.TextColumn('Канал'),
+                            'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
+                            'subscribers': st.column_config.NumberColumn('Подписчики', format='%d'),
+                            'views': st.column_config.NumberColumn('Просмотры', format='%d'),
+                            'likes': st.column_config.NumberColumn('Лайки', format='%d'),
+                            'duration_formatted': st.column_config.TextColumn('Длительность'),
+                            'short_indicator': st.column_config.TextColumn('Тип видео'),
+                            'published': st.column_config.DatetimeColumn('Дата', format='DD.MM.YYYY')
+                        }
+                    )
 
                     csv_data = df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
