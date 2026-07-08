@@ -52,6 +52,10 @@ REQUEST_DELAY = 0.1
 MAX_RETRIES = 3
 REQUEST_TIMEOUT = 30
 
+# Встроенный ключ Gemini по умолчанию (можно переопределить в поле ввода или через Secrets)
+DEFAULT_GEMINI_KEY = "AIzaSyCSBkQu1ubM1stQZFaf6bduW_Featrsilg"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
 st.markdown("""
 <style>
     .main-header {
@@ -849,6 +853,7 @@ class YouTubeAnalyzer:
             df['days_ago'] = (datetime.now() - df['published']).dt.days.fillna(0)
             df['engagement_rate'] = np.where(df['views'] > 0, ((df['likes'] + df['comments']) / df['views']) * 100, 0)
             df['views_per_subscriber'] = np.where(df['subscribers'] > 0, df['views'] / df['subscribers'], 0)
+            df['views_per_day'] = (df['views'] / df['days_ago'].clip(lower=1)).round(0)
             
             view_quartiles = df['views'].quantile([0.25, 0.5, 0.75, 0.9])
             
@@ -1177,30 +1182,32 @@ class YouTubeTagAnalyzer:
         return sorted(results, key=lambda x: x.overall_score, reverse=True)
 
 class ContentStrategist:
-    def __init__(self, openai_key=None, openai_model=None, personal_context=""):
-        self.use_openai = bool(openai_key and openai_model)
-        self.personal_context = personal_context # Сохраняем личный контекст
-        if self.use_openai:
+    def __init__(self, provider=None, api_key=None, model=None, personal_context=""):
+        self.provider = provider  # 'gemini' | 'openai' | None
+        self.api_key = api_key
+        self.model = model
+        self.personal_context = personal_context
+        self.use_ai = bool(provider and api_key and model)
+        if self.use_ai and self.provider == 'openai':
             try:
-                self.client = openai.OpenAI(api_key=openai_key)
-                self.model = openai_model
+                self.client = openai.OpenAI(api_key=api_key)
             except Exception as e:
                 st.error(f"Ошибка инициализации OpenAI: {e}")
-                self.use_openai = False
+                self.use_ai = False
 
     def get_strategy(self, keyword: str, comp_analysis: dict, trends_data: dict, df: pd.DataFrame, cache: CacheManager):
         if not comp_analysis: return "Недостаточно данных для генерации стратегии."
         cache_key = None
-        if self.use_openai:
-            cache_key = cache.generate_key('openai_v4', keyword, self.model, comp_analysis, trends_data, self.personal_context) # Добавляем контекст в ключ кэша
+        if self.use_ai:
+            cache_key = cache.generate_key('ai_v5', self.provider, keyword, self.model, comp_analysis, trends_data, self.personal_context)
             if cached_strategy := cache.get(cache_key):
                 st.toast("🤖 AI Стратегия загружена из кэша!", icon="🧠")
                 return cached_strategy
-        
-        if self.use_openai: strategy = self._get_ai_strategy(keyword, comp_analysis, trends_data, df)
+
+        if self.use_ai: strategy = self._get_ai_strategy(keyword, comp_analysis, trends_data, df)
         else: strategy = self._get_rule_based_strategy(keyword, comp_analysis, df)
-        
-        if self.use_openai and cache_key and "Ошибка" not in strategy:
+
+        if self.use_ai and cache_key and "Ошибка" not in strategy:
             cache.set(cache_key, strategy, 'openai')
         return strategy
 
@@ -1251,7 +1258,7 @@ class ContentStrategist:
         return "\n\n".join(strategy_parts)
     
     def _get_ai_strategy(self, keyword: str, comp_analysis: dict, trends_data: dict, df: pd.DataFrame):
-        st.toast("🤖 Отправляю данные на анализ в OpenAI...", icon="🧠")
+        st.toast(f"🤖 Отправляю данные на анализ ({self.model})...", icon="🧠")
         
         top_titles, top_channels = [], []
         if not df.empty:
@@ -1308,18 +1315,40 @@ class ContentStrategist:
         """
 
         try:
-            params = {"model": self.model, "messages": [{"role": "user", "content": prompt}]}
-            if self.model.startswith('gpt-5'):
-                # GPT-5 (reasoning-модели): temperature не поддерживается, max_tokens заменён на max_completion_tokens
-                params["max_completion_tokens"] = 4000
-            else:
-                params["temperature"] = 0.7
-                params["max_tokens"] = 2000
-            response = self.client.chat.completions.create(**params)
-            return response.choices[0].message.content
+            if self.provider == 'gemini':
+                return self._call_gemini(prompt)
+            return self._call_openai(prompt)
         except Exception as e:
-            logger.error(f"Ошибка вызова OpenAI: {e}", exc_info=True)
-            return f"❌ Ошибка при обращении к OpenAI: {e}"
+            logger.error(f"Ошибка вызова AI ({self.provider}): {e}", exc_info=True)
+            return f"❌ Ошибка при обращении к AI ({self.provider}): {e}"
+
+    def _call_gemini(self, prompt: str) -> str:
+        url = GEMINI_API_URL.format(model=self.model)
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.7}
+        }
+        response = requests.post(url, params={'key': self.api_key}, json=payload, timeout=120)
+        response.raise_for_status()
+        data = response.json()
+        candidates = data.get('candidates', [])
+        if not candidates:
+            block_reason = data.get('promptFeedback', {}).get('blockReason', 'нет ответа')
+            return f"❌ Ошибка Gemini: {block_reason}"
+        parts = candidates[0].get('content', {}).get('parts', [])
+        text = "".join(p.get('text', '') for p in parts)
+        return text or "❌ Ошибка Gemini: пустой ответ"
+
+    def _call_openai(self, prompt: str) -> str:
+        params = {"model": self.model, "messages": [{"role": "user", "content": prompt}]}
+        if self.model.startswith('gpt-5'):
+            # GPT-5 (reasoning-модели): temperature не поддерживается, max_tokens заменён на max_completion_tokens
+            params["max_completion_tokens"] = 4000
+        else:
+            params["temperature"] = 0.7
+            params["max_tokens"] = 2000
+        response = self.client.chat.completions.create(**params)
+        return response.choices[0].message.content
 
 # --- 5. ГЛАВНЫЙ ИНТЕРФЕЙС ---
 
@@ -1340,25 +1369,41 @@ def main():
         
         st.markdown("---")
         st.subheader("🤖 AI-стратег")
-        use_openai = st.toggle("Включить AI-анализ (OpenAI)", value=True, key="use_openai")
-        openai_api_key, openai_model = "", "gpt-5-mini"
+        use_ai = st.toggle("Включить AI-анализ", value=True, key="use_ai")
+        ai_provider, ai_api_key, ai_model = None, "", ""
         personal_context = "" # Инициализация личного контекста
-        if use_openai:
-            openai_api_key = st.text_input("OpenAI API Key", type="password", help="Ключ для генерации AI-стратегий", key="openai_api_key")
-            if not openai_api_key and get_secret("OPENAI_API_KEY"):
-                openai_api_key = get_secret("OPENAI_API_KEY")
-                st.caption("🔐 Ключ загружен из Secrets")
-            elif openai_api_key:
-                if validate_openai_api_key(openai_api_key): st.success("✅ OpenAI API ключ валиден")
-                else: st.error("❌ Неверный OpenAI API ключ")
-            
-            openai_model = st.selectbox(
-                "Модель OpenAI",
-                ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
-                index=1, # gpt-5-mini по умолчанию
-                help="gpt-5-mini — оптимально по цене/качеству, gpt-5 — максимум качества",
-                key="openai_model"
-            )
+        if use_ai:
+            provider_label = st.selectbox("AI-провайдер", ["Google Gemini", "OpenAI"], index=0, key="ai_provider")
+            if provider_label == "Google Gemini":
+                ai_provider = 'gemini'
+                ai_api_key = st.text_input("Gemini API Key", type="password", help="Можно оставить пустым — используется встроенный ключ", key="gemini_api_key")
+                if not ai_api_key:
+                    ai_api_key = get_secret("GEMINI_API_KEY") or DEFAULT_GEMINI_KEY
+                    st.caption("🔐 Используется встроенный ключ Gemini")
+                ai_model = st.selectbox(
+                    "Модель Gemini",
+                    ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+                    index=0,
+                    help="gemini-2.5-flash — быстро и бесплатно, gemini-2.5-pro — максимум качества",
+                    key="gemini_model"
+                )
+            else:
+                ai_provider = 'openai'
+                ai_api_key = st.text_input("OpenAI API Key", type="password", help="Ключ для генерации AI-стратегий", key="openai_api_key")
+                if not ai_api_key and get_secret("OPENAI_API_KEY"):
+                    ai_api_key = get_secret("OPENAI_API_KEY")
+                    st.caption("🔐 Ключ загружен из Secrets")
+                elif ai_api_key:
+                    if validate_openai_api_key(ai_api_key): st.success("✅ OpenAI API ключ валиден")
+                    else: st.error("❌ Неверный OpenAI API ключ")
+
+                ai_model = st.selectbox(
+                    "Модель OpenAI",
+                    ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
+                    index=1, # gpt-5-mini по умолчанию
+                    help="gpt-5-mini — оптимально по цене/качеству, gpt-5 — максимум качества",
+                    key="openai_model"
+                )
 
             personal_context = st.text_area(
                 "Личный контекст для AI",
@@ -1425,7 +1470,7 @@ def main():
             if not analyzer.test_connection(): st.stop()
             
             spinner_text = "🌊 Анализирую YouTube..."
-            if use_openai and openai_api_key and validate_openai_api_key(openai_api_key): spinner_text += " Привлекаю AI..."
+            if use_ai and ai_api_key: spinner_text += " Привлекаю AI..."
 
             with st.spinner(spinner_text):
                 published_after_date = (datetime.now() - timedelta(days=days_limit)).isoformat("T") + "Z" if days_limit else None
@@ -1439,11 +1484,11 @@ def main():
                 trends_analyzer = AdvancedTrendsAnalyzer(cache)
                 trends_data = trends_analyzer.analyze_keyword_trends(keyword)
                 
-                # Передаем personal_context в ContentStrategist
                 strategist = ContentStrategist(
-                    openai_api_key if use_openai and validate_openai_api_key(openai_api_key) else None,
-                    openai_model if use_openai else None,
-                    personal_context if use_openai else ""
+                    provider=ai_provider if use_ai and ai_api_key else None,
+                    api_key=ai_api_key,
+                    model=ai_model,
+                    personal_context=personal_context if use_ai else ""
                 )
                 strategy_output = strategist.get_strategy(keyword, comp_analysis, trends_data, df, cache)
 
@@ -1459,7 +1504,7 @@ def main():
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 AI Советы", "🏷️ Анализ тегов", "📈 Популярность", "🏆 Топ видео", "📊 Статистика"])
 
             with tab1:
-                css_class = "openai-result" if strategist.use_openai else "custom-container"
+                css_class = "openai-result" if strategist.use_ai else "custom-container"
                 st.markdown(f'<div class="{css_class}">{strategy_output}</div>', unsafe_allow_html=True)
                 
             with tab2:
@@ -1501,13 +1546,25 @@ def main():
                             with col2: st.markdown(f"""
                                 **[{video['title']}]({video['video_url']})**<br>
                                 📺 **[{video['channel']}]({channel_link})** ({video['subscribers_formatted']} подписчиков)<br>
-                                👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']}
+                                👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']} • 🚀 {safe_format_number(video.get('views_per_day', 0))}/день
                                 """, unsafe_allow_html=True)
             
             with tab5:
                 st.markdown("### 📊 Детальная статистика по найденным видео")
                 if not df.empty:
-                    display_df = df[['title', 'video_url', 'channel', 'channel_url', 'subscribers', 'views', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
+                    fcol1, fcol2 = st.columns([2, 3])
+                    with fcol1:
+                        type_filter = st.radio("Тип контента:", ["Все", "📹 Видео", "🩳 Shorts"], horizontal=True, key="type_filter")
+                    with fcol2:
+                        small_channels = st.checkbox("🌱 Только небольшие каналы (до 100K подписчиков) — реальные конкуренты", key="small_channels")
+
+                    filtered_df = df
+                    if type_filter == "📹 Видео": filtered_df = filtered_df[~filtered_df['is_short']]
+                    elif type_filter == "🩳 Shorts": filtered_df = filtered_df[filtered_df['is_short']]
+                    if small_channels: filtered_df = filtered_df[filtered_df['subscribers'] < 100_000]
+                    st.caption(f"Показано {len(filtered_df)} из {len(df)} видео")
+
+                    display_df = filtered_df[['title', 'video_url', 'channel', 'channel_url', 'subscribers', 'views', 'views_per_day', 'engagement_rate', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
                     st.dataframe(
                         display_df,
                         use_container_width=True,
@@ -1519,12 +1576,81 @@ def main():
                             'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
                             'subscribers': st.column_config.NumberColumn('Подписчики', format='%d'),
                             'views': st.column_config.NumberColumn('Просмотры', format='%d'),
+                            'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d', help='Средняя скорость набора просмотров'),
+                            'engagement_rate': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f', help='(лайки + комментарии) / просмотры'),
                             'likes': st.column_config.NumberColumn('Лайки', format='%d'),
                             'duration_formatted': st.column_config.TextColumn('Длительность'),
                             'short_indicator': st.column_config.TextColumn('Тип видео'),
                             'published': st.column_config.DatetimeColumn('Дата', format='DD.MM.YYYY')
                         }
                     )
+
+                    st.markdown("### 🚀 Набирающие обороты")
+                    st.caption("Лидеры по скорости набора просмотров — самые горячие видео ниши прямо сейчас")
+                    rising_df = filtered_df.nlargest(10, 'views_per_day')[['title', 'video_url', 'channel', 'channel_url', 'views', 'views_per_day', 'days_ago']]
+                    st.dataframe(
+                        rising_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'title': st.column_config.TextColumn('Заголовок', width='large'),
+                            'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
+                            'channel': st.column_config.TextColumn('Канал'),
+                            'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
+                            'views': st.column_config.NumberColumn('Просмотры', format='%d'),
+                            'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d'),
+                            'days_ago': st.column_config.NumberColumn('Дней назад', format='%d')
+                        }
+                    )
+
+                    st.markdown("### 📺 Каналы в нише")
+                    st.caption("Кто доминирует в выдаче — сколько видео в топе и с какими результатами")
+                    channels_df = filtered_df.groupby(['channel', 'channel_id'], as_index=False).agg(
+                        videos_in_top=('video_id', 'count'),
+                        total_views=('views', 'sum'),
+                        avg_views=('views', 'mean'),
+                        subscribers=('subscribers', 'first'),
+                        avg_engagement=('engagement_rate', 'mean')
+                    )
+                    channels_df['channel_url'] = 'https://www.youtube.com/channel/' + channels_df['channel_id'].astype(str)
+                    channels_df['views_per_sub'] = np.where(channels_df['subscribers'] > 0, channels_df['avg_views'] / channels_df['subscribers'], 0)
+                    channels_df = channels_df.sort_values('total_views', ascending=False).head(25)
+                    st.dataframe(
+                        channels_df[['channel', 'channel_url', 'subscribers', 'videos_in_top', 'total_views', 'avg_views', 'views_per_sub', 'avg_engagement']],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'channel': st.column_config.TextColumn('Канал', width='medium'),
+                            'channel_url': st.column_config.LinkColumn('Ссылка', display_text='📺 Открыть'),
+                            'subscribers': st.column_config.NumberColumn('Подписчики', format='%d'),
+                            'videos_in_top': st.column_config.NumberColumn('Видео в выдаче', format='%d'),
+                            'total_views': st.column_config.NumberColumn('Просмотры (сумма)', format='%d'),
+                            'avg_views': st.column_config.NumberColumn('Просмотры (сред.)', format='%d'),
+                            'views_per_sub': st.column_config.NumberColumn('⚡ Просм./подписчик', format='%.2f', help='Больше 1 — контент разлетается шире своей базы подписчиков'),
+                            'avg_engagement': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f')
+                        }
+                    )
+
+                    with st.expander("📈 Карта виральности: подписчики vs просмотры"):
+                        st.caption("Точки выше диагонали — видео, набравшие больше просмотров, чем «положено» по размеру канала. Это ниши-возможности.")
+                        scatter_df = filtered_df[filtered_df['subscribers'] > 0]
+                        if not scatter_df.empty:
+                            fig_scatter = px.scatter(
+                                scatter_df, x='subscribers', y='views',
+                                color='short_indicator', hover_name='title',
+                                hover_data={'channel': True, 'views_per_day': True, 'subscribers': True, 'views': True, 'short_indicator': False},
+                                log_x=True, log_y=True,
+                                labels={'subscribers': 'Подписчики канала', 'views': 'Просмотры видео', 'short_indicator': 'Тип'}
+                            )
+                            max_val = max(scatter_df['subscribers'].max(), scatter_df['views'].max())
+                            fig_scatter.add_trace(go.Scatter(
+                                x=[1, max_val], y=[1, max_val], mode='lines',
+                                line=dict(dash='dash', color='gray'), name='1 просмотр = 1 подписчик', hoverinfo='skip'
+                            ))
+                            fig_scatter.update_layout(template='plotly_dark', height=500)
+                            st.plotly_chart(fig_scatter, use_container_width=True)
+                        else:
+                            st.info("Недостаточно данных для графика.")
 
                     csv_data = df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
