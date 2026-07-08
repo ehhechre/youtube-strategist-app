@@ -590,6 +590,16 @@ class YouTubeAnalyzer:
             logger.error(f"Неожиданная ошибка API: {e}")
             raise
 
+    def _channel_age_days(self, published_at: str) -> int:
+        """Возраст канала в днях"""
+        try:
+            if not published_at:
+                return 0
+            created = datetime.fromisoformat(published_at.replace('Z', '+00:00')).replace(tzinfo=None)
+            return max((datetime.now() - created).days, 0)
+        except Exception:
+            return 0
+
     def get_channel_stats(self, channel_ids: list):
         """Улучшенное получение статистики каналов"""
         if not channel_ids:
@@ -599,15 +609,15 @@ class YouTubeAnalyzer:
         if not unique_ids:
             return {}
             
-        cache_key = self.cache.generate_key('channels', sorted(unique_ids))
+        cache_key = self.cache.generate_key('channels_v2', sorted(unique_ids))
         if cached_data := self.cache.get(cache_key):
             return cached_data
-        
+
         channel_stats = {}
         try:
             for i in range(0, len(unique_ids), 50):
                 chunk_ids = unique_ids[i:i+50]
-                
+
                 request = self.youtube.channels().list(
                     part="statistics,snippet,brandingSettings",
                     id=",".join(chunk_ids)
@@ -619,11 +629,20 @@ class YouTubeAnalyzer:
                     stats = item.get('statistics', {})
                     snippet = item.get('snippet', {})
                     branding = item.get('brandingSettings', {}).get('channel', {})
-                    
+
+                    subs_hidden = stats.get('hiddenSubscriberCount', False)
+                    subscribers = np.nan if subs_hidden else safe_int_conversion(stats.get('subscriberCount', 0))
+                    channel_video_count = safe_int_conversion(stats.get('videoCount', 0))
+                    channel_total_views = safe_int_conversion(stats.get('viewCount', 0))
+
                     channel_stats[item['id']] = {
-                        'subscribers': safe_int_conversion(stats.get('subscriberCount', 0)),
-                        'total_views': safe_int_conversion(stats.get('viewCount', 0)),
-                        'video_count': safe_int_conversion(stats.get('videoCount', 0)),
+                        'subscribers': subscribers,
+                        'subscribers_hidden': subs_hidden,
+                        'subscribers_formatted': 'Скрыто' if subs_hidden else safe_format_number(subscribers),
+                        'total_views': channel_total_views,
+                        'video_count': channel_video_count,
+                        'avg_views_per_video': safe_float_conversion(channel_total_views / channel_video_count) if channel_video_count > 0 else 0,
+                        'channel_age_days': self._channel_age_days(snippet.get('publishedAt', '')),
                         'title': clean_text(snippet.get('title', 'Неизвестно')),
                         'description': clean_text(snippet.get('description', ''))[:500],
                         'published_at': snippet.get('publishedAt', ''),
@@ -655,7 +674,7 @@ class YouTubeAnalyzer:
             max_results = 500
             st.warning("⚠️ Максимальное количество видео ограничено до 500")
         
-        cache_key = self.cache.generate_key('search_v6', keyword, max_results, published_after)
+        cache_key = self.cache.generate_key('search_v7', keyword, max_results, published_after)
         if cached_data := self.cache.get(cache_key):
             st.toast("🚀 Результаты поиска загружены из кэша!", icon="⚡️")
             return cached_data
@@ -749,19 +768,27 @@ class YouTubeAnalyzer:
                 duration = self._parse_duration(content_details.get('duration', 'PT0S'))
                 channel_id = video_snippet.get('channelId')
                 channel_info = channel_stats.get(channel_id, {})
-                
+                title_clean = clean_text(video_snippet.get('title', ''))
+
                 category_id = safe_int_conversion(video_snippet.get('categoryId', 0))
                 tags = video_snippet.get('tags', [])[:20]
-                
+
                 video_data = {
                     'video_id': video_id,
-                    'title': clean_text(video_snippet.get('title', '')),
+                    'title': title_clean,
+                    'title_length': len(title_clean),
+                    'title_has_number': bool(re.search(r'\d', title_clean)),
+                    'title_has_question': '?' in title_clean,
+                    'title_has_brackets': bool(re.search(r'[\[\(].+?[\]\)]', title_clean)),
                     'channel': clean_text(video_snippet.get('channelTitle', '')),
                     'channel_id': channel_id,
-                    'subscribers': channel_info.get('subscribers', 0),
-                    'subscribers_formatted': safe_format_number(channel_info.get('subscribers', 0)),
+                    'subscribers': channel_info.get('subscribers', np.nan),
+                    'subscribers_formatted': channel_info.get('subscribers_formatted', safe_format_number(channel_info.get('subscribers', 0))),
+                    'subscribers_hidden': channel_info.get('subscribers_hidden', False),
                     'channel_total_views': channel_info.get('total_views', 0),
                     'channel_video_count': channel_info.get('video_count', 0),
+                    'channel_avg_views': channel_info.get('avg_views_per_video', 0),
+                    'channel_age_days': channel_info.get('channel_age_days', 0),
                     'channel_verified': channel_info.get('verified', False),
                     'published': video_snippet.get('publishedAt', ''),
                     'views': safe_int_conversion(stats.get('viewCount', 0)),
@@ -1562,9 +1589,12 @@ def main():
                     if type_filter == "📹 Видео": filtered_df = filtered_df[~filtered_df['is_short']]
                     elif type_filter == "🩳 Shorts": filtered_df = filtered_df[filtered_df['is_short']]
                     if small_channels: filtered_df = filtered_df[filtered_df['subscribers'] < 100_000]
-                    st.caption(f"Показано {len(filtered_df)} из {len(df)} видео")
+                    hidden_count = int(df['subscribers_hidden'].sum())
+                    caption = f"Показано {len(filtered_df)} из {len(df)} видео"
+                    if hidden_count: caption += f" • у {hidden_count} каналов подписчики скрыты владельцем (не 0 — YouTube просто не отдаёт эти данные)"
+                    st.caption(caption)
 
-                    display_df = filtered_df[['title', 'video_url', 'channel', 'channel_url', 'subscribers', 'views', 'views_per_day', 'engagement_rate', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
+                    display_df = filtered_df[['title', 'video_url', 'channel', 'channel_url', 'subscribers_formatted', 'views', 'views_per_day', 'engagement_rate', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
                     st.dataframe(
                         display_df,
                         use_container_width=True,
@@ -1574,7 +1604,7 @@ def main():
                             'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
                             'channel': st.column_config.TextColumn('Канал'),
                             'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
-                            'subscribers': st.column_config.NumberColumn('Подписчики', format='%d'),
+                            'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
                             'views': st.column_config.NumberColumn('Просмотры', format='%d'),
                             'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d', help='Средняя скорость набора просмотров'),
                             'engagement_rate': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f', help='(лайки + комментарии) / просмотры'),
@@ -1610,19 +1640,23 @@ def main():
                         total_views=('views', 'sum'),
                         avg_views=('views', 'mean'),
                         subscribers=('subscribers', 'first'),
+                        subscribers_formatted=('subscribers_formatted', 'first'),
+                        channel_age_days=('channel_age_days', 'first'),
                         avg_engagement=('engagement_rate', 'mean')
                     )
                     channels_df['channel_url'] = 'https://www.youtube.com/channel/' + channels_df['channel_id'].astype(str)
                     channels_df['views_per_sub'] = np.where(channels_df['subscribers'] > 0, channels_df['avg_views'] / channels_df['subscribers'], 0)
+                    channels_df['channel_age_years'] = (channels_df['channel_age_days'] / 365).round(1)
                     channels_df = channels_df.sort_values('total_views', ascending=False).head(25)
                     st.dataframe(
-                        channels_df[['channel', 'channel_url', 'subscribers', 'videos_in_top', 'total_views', 'avg_views', 'views_per_sub', 'avg_engagement']],
+                        channels_df[['channel', 'channel_url', 'subscribers_formatted', 'channel_age_years', 'videos_in_top', 'total_views', 'avg_views', 'views_per_sub', 'avg_engagement']],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
                             'channel': st.column_config.TextColumn('Канал', width='medium'),
                             'channel_url': st.column_config.LinkColumn('Ссылка', display_text='📺 Открыть'),
-                            'subscribers': st.column_config.NumberColumn('Подписчики', format='%d'),
+                            'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
+                            'channel_age_years': st.column_config.NumberColumn('Возраст канала, лет', format='%.1f'),
                             'videos_in_top': st.column_config.NumberColumn('Видео в выдаче', format='%d'),
                             'total_views': st.column_config.NumberColumn('Просмотры (сумма)', format='%d'),
                             'avg_views': st.column_config.NumberColumn('Просмотры (сред.)', format='%d'),
@@ -1651,6 +1685,39 @@ def main():
                             st.plotly_chart(fig_scatter, use_container_width=True)
                         else:
                             st.info("Недостаточно данных для графика.")
+
+                    st.markdown("### ✍️ Что работает в заголовках")
+                    st.caption("Сравнение среднего числа просмотров у видео с разными приёмами в заголовке — помогает понять, что цепляет в этой нише")
+                    pattern_rows = []
+                    patterns = [
+                        ('Есть цифра в заголовке', 'title_has_number'),
+                        ('Заголовок-вопрос', 'title_has_question'),
+                        ('Есть скобки/уточнение', 'title_has_brackets'),
+                    ]
+                    for label, col in patterns:
+                        with_pattern = filtered_df[filtered_df[col] == True]['views']
+                        without_pattern = filtered_df[filtered_df[col] == False]['views']
+                        if len(with_pattern) >= 3 and len(without_pattern) >= 3:
+                            pattern_rows.append({
+                                'Приём': label,
+                                'Ср. просмотры (есть)': int(with_pattern.mean()),
+                                'Ср. просмотры (нет)': int(without_pattern.mean()),
+                                'Эффект': f"{(with_pattern.mean() / without_pattern.mean() - 1) * 100:+.0f}%",
+                                'Видео с приёмом': len(with_pattern)
+                            })
+                    if pattern_rows:
+                        st.dataframe(pd.DataFrame(pattern_rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Недостаточно видео для сравнения паттернов заголовков.")
+
+                    length_bins = pd.cut(filtered_df['title_length'], bins=[0, 30, 50, 70, 100, 1000], labels=['до 30', '30-50', '50-70', '70-100', '100+'])
+                    length_stats = filtered_df.groupby(length_bins, observed=True)['views'].agg(['mean', 'count']).reset_index()
+                    length_stats.columns = ['Длина заголовка', 'Ср. просмотры', 'Кол-во видео']
+                    length_stats = length_stats[length_stats['Кол-во видео'] >= 2]
+                    if not length_stats.empty:
+                        fig_length = px.bar(length_stats, x='Длина заголовка', y='Ср. просмотры', text='Кол-во видео', title='Средние просмотры по длине заголовка (символов)')
+                        fig_length.update_layout(template='plotly_dark', height=350)
+                        st.plotly_chart(fig_length, use_container_width=True)
 
                     csv_data = df.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
