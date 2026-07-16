@@ -58,69 +58,118 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model
 
 st.markdown("""
 <style>
+    :root {
+        --accent: #7C5CFC;
+        --accent-2: #FF0050;
+    }
+
+    .block-container { padding-top: 2rem; }
+
     .main-header {
-        font-size: 2.8rem;
-        color: #FF0000;
+        font-size: 2.6rem;
         text-align: center;
-        margin-bottom: 2rem;
-        font-weight: bold;
-        background: linear-gradient(90deg, #FF0000 0%, #FF6B6B 100%);
+        margin-bottom: 0.3rem;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        background: linear-gradient(90deg, #FF0050 0%, #7C5CFC 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
+
+    /* Кнопки */
     .stButton>button {
-        border-radius: 8px;
-        font-weight: bold;
-        transition: all 0.3s ease;
+        border-radius: 10px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        border: 1px solid rgba(255,255,255,0.08);
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        box-shadow: 0 6px 16px rgba(124, 92, 252, 0.25);
+        border-color: var(--accent);
     }
+    div[data-testid="stBaseButton-primary"] button, .stButton>button[kind="primary"] {
+        background: linear-gradient(90deg, #FF0050 0%, #7C5CFC 100%);
+        border: none;
+    }
+
+    /* Карточки результатов AI */
     .custom-container {
-        background: linear-gradient(135deg, rgba(42, 57, 62, 0.5), rgba(62, 77, 82, 0.3));
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 5px solid #00a0dc;
+        background: linear-gradient(135deg, rgba(124, 92, 252, 0.12), rgba(124, 92, 252, 0.04));
+        padding: 1.6rem;
+        border-radius: 16px;
+        border: 1px solid rgba(124, 92, 252, 0.25);
         margin-top: 1rem;
-        backdrop-filter: blur(10px);
     }
     .openai-result {
-        background: linear-gradient(135deg, rgba(26, 142, 95, 0.1), rgba(46, 162, 115, 0.05));
-        padding: 1.5rem;
-        border-radius: 15px;
-        border-left: 5px solid #1a8e5f;
+        background: linear-gradient(135deg, rgba(26, 142, 95, 0.14), rgba(46, 162, 115, 0.04));
+        padding: 1.6rem;
+        border-radius: 16px;
+        border: 1px solid rgba(26, 142, 95, 0.3);
         margin-top: 1rem;
-        backdrop-filter: blur(10px);
     }
     .insight-box {
-        background: linear-gradient(135deg, #262730, #3a3b45);
+        background: linear-gradient(135deg, #22232e, #2c2d3a);
         padding: 1rem;
-        border-radius: 15px;
+        border-radius: 14px;
         margin-top: 1rem;
-        border: 1px solid #444;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #1e1e2e, #2a2a3e);
-        padding: 1rem;
-        border-radius: 10px;
-        border: 1px solid #444;
-        margin: 0.5rem 0;
+        border: 1px solid rgba(255,255,255,0.08);
     }
     .success-alert {
-        background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05));
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.04));
         border: 1px solid rgba(34, 197, 94, 0.3);
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 1rem;
         margin: 1rem 0;
     }
     .warning-alert {
-        background: linear-gradient(135deg, rgba(251, 146, 60, 0.1), rgba(251, 146, 60, 0.05));
+        background: linear-gradient(135deg, rgba(251, 146, 60, 0.12), rgba(251, 146, 60, 0.04));
         border: 1px solid rgba(251, 146, 60, 0.3);
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 1rem;
         margin: 1rem 0;
+    }
+
+    /* Карточки метрик (верхняя панель показателей ниши) */
+    div[data-testid="stMetric"] {
+        background: linear-gradient(160deg, rgba(124, 92, 252, 0.10), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        border-color: rgba(124, 92, 252, 0.45);
+    }
+    div[data-testid="stMetricValue"] { font-weight: 800; }
+
+    /* Табы */
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        padding: 0.5rem 1.1rem;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(180deg, rgba(124, 92, 252, 0.22), rgba(124, 92, 252, 0.06));
+        border-bottom: 2px solid var(--accent);
+    }
+
+    /* Таблицы */
+    div[data-testid="stDataFrame"] {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* Контейнеры карточек видео */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 14px !important;
+        transition: border-color 0.2s ease;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: rgba(124, 92, 252, 0.4) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -881,7 +930,13 @@ class YouTubeAnalyzer:
             df['engagement_rate'] = np.where(df['views'] > 0, ((df['likes'] + df['comments']) / df['views']) * 100, 0)
             df['views_per_subscriber'] = np.where(df['subscribers'] > 0, df['views'] / df['subscribers'], 0)
             df['views_per_day'] = (df['views'] / df['days_ago'].clip(lower=1)).round(0)
-            
+
+            # "Индекс возможности": перцентильный ранг просмотров/подписчик (вес 0.6) + просмотров/день (вес 0.4).
+            # Ищет видео, набравшие непропорционально много просмотров относительно размера канала и делающие это прямо сейчас.
+            vps_rank = df['views_per_subscriber'].replace([np.inf, -np.inf], np.nan).rank(pct=True).fillna(0)
+            vpd_rank = df['views_per_day'].rank(pct=True).fillna(0)
+            df['opportunity_score'] = ((vps_rank * 0.6 + vpd_rank * 0.4) * 100).round(1)
+
             view_quartiles = df['views'].quantile([0.25, 0.5, 0.75, 0.9])
             
             analysis = {
@@ -1495,22 +1550,22 @@ def main():
         try:
             analyzer = YouTubeAnalyzer(youtube_api_key, cache)
             if not analyzer.test_connection(): st.stop()
-            
+
             spinner_text = "🌊 Анализирую YouTube..."
             if use_ai and ai_api_key: spinner_text += " Привлекаю AI..."
 
             with st.spinner(spinner_text):
                 published_after_date = (datetime.now() - timedelta(days=days_limit)).isoformat("T") + "Z" if days_limit else None
                 videos = analyzer.search_videos(keyword, max_results, published_after=published_after_date)
-                
+
                 if not videos:
                     st.warning(f"🔍 Не найдено видео по запросу '{keyword}'. Попробуйте изменить ключевое слово или период анализа.")
                     st.stop()
-                
+
                 comp_analysis, df = analyzer.analyze_competition(videos)
                 trends_analyzer = AdvancedTrendsAnalyzer(cache)
                 trends_data = trends_analyzer.analyze_keyword_trends(keyword)
-                
+
                 strategist = ContentStrategist(
                     provider=ai_provider if use_ai and ai_api_key else None,
                     api_key=ai_api_key,
@@ -1519,212 +1574,266 @@ def main():
                 )
                 strategy_output = strategist.get_strategy(keyword, comp_analysis, trends_data, df, cache)
 
-            st.markdown(f"# 📊 Анализ ниши: **{keyword}**")
-            
-            cols = st.columns(5)
-            cols[0].metric("📹 Видео", f"{len(df)}")
-            cols[1].metric("🏆 Конкуренция", comp_analysis.get('competition_level', 'N/A').split()[0])
-            cols[2].metric("👀 Сред. просмотры", safe_format_number(int(comp_analysis.get('avg_views', 0))))
-            cols[3].metric("💬 Активность", f"{comp_analysis.get('engagement_rate', 0):.1f}%")
-            cols[4].metric("📺 Каналов", comp_analysis.get('unique_channels', 0))
-
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 AI Советы", "🏷️ Анализ тегов", "📈 Популярность", "🏆 Топ видео", "📊 Статистика"])
-
-            with tab1:
-                css_class = "openai-result" if strategist.use_ai else "custom-container"
-                st.markdown(f'<div class="{css_class}">{strategy_output}</div>', unsafe_allow_html=True)
-                
-            with tab2:
-                all_tags = [tag.lower() for v in videos if v.get('tags') for tag in v['tags']]
-                if all_tags:
-                    tag_popularity = Counter(all_tags)
-                    st.markdown("#### Выберите теги для детального анализа")
-                    selected_tags = st.multiselect("Популярные теги:", [t for t, c in tag_popularity.most_common(20)], default=[t for t,c in tag_popularity.most_common(5)])
-                    custom_tags = st.text_input("Добавьте свои теги через запятую:")
-                    if custom_tags: selected_tags.extend([t.strip().lower() for t in custom_tags.split(',') if t.strip()])
-                    
-                    if st.button("🔍 Анализировать выбранные теги", type="secondary"):
-                        unique_tags_to_analyze = list(set(selected_tags))[:20]
-                        tag_analyzer = YouTubeTagAnalyzer(serpapi_key if use_serpapi and validate_serpapi_key(serpapi_key) else None, cache)
-                        with st.spinner(f"🏷️ Анализирую {len(unique_tags_to_analyze)} тегов..."):
-                            tag_results = tag_analyzer.analyze_multiple_keywords(unique_tags_to_analyze)
-                        if tag_results:
-                            results_df = pd.DataFrame([vars(r) for r in tag_results])
-                            st.dataframe(results_df[['keyword', 'search_volume', 'competition_score', 'seo_score', 'overall_score', 'difficulty']].rename(columns={'keyword':'Тег','search_volume':'Объем','competition_score':'Конкуренция','seo_score':'SEO','overall_score':'Оценка','difficulty':'Сложность'}), hide_index=True)
-                else:
-                    st.warning("Теги не найдены в проанализированных видео.")
-
-            with tab3:
-                if trends_data and 'interest_df' in trends_data and not trends_data['interest_df'].empty:
-                    fig = px.line(trends_data['interest_df'], x=trends_data['interest_df'].index, y=keyword, title=f'Популярность темы: "{keyword}"')
-                    fig.update_layout(template='plotly_dark')
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("📈 Данные Google Trends недоступны.")
-
-            with tab4:
-                st.markdown("### 🏆 Топ видео по просмотрам")
-                if not df.empty:
-                    for _, video in df.nlargest(10, 'views').iterrows():
-                        with st.container(border=True):
-                            col1, col2 = st.columns([1, 4])
-                            channel_link = video.get('channel_url', '') or f"https://www.youtube.com/channel/{video['channel_id']}"
-                            with col1: st.image(video.get('thumbnail', ''))
-                            with col2: st.markdown(f"""
-                                **[{video['title']}]({video['video_url']})**<br>
-                                📺 **[{video['channel']}]({channel_link})** ({video['subscribers_formatted']} подписчиков)<br>
-                                👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']} • 🚀 {safe_format_number(video.get('views_per_day', 0))}/день
-                                """, unsafe_allow_html=True)
-            
-            with tab5:
-                st.markdown("### 📊 Детальная статистика по найденным видео")
-                if not df.empty:
-                    fcol1, fcol2 = st.columns([2, 3])
-                    with fcol1:
-                        type_filter = st.radio("Тип контента:", ["Все", "📹 Видео", "🩳 Shorts"], horizontal=True, key="type_filter")
-                    with fcol2:
-                        small_channels = st.checkbox("🌱 Только небольшие каналы (до 100K подписчиков) — реальные конкуренты", key="small_channels")
-
-                    filtered_df = df
-                    if type_filter == "📹 Видео": filtered_df = filtered_df[~filtered_df['is_short']]
-                    elif type_filter == "🩳 Shorts": filtered_df = filtered_df[filtered_df['is_short']]
-                    if small_channels: filtered_df = filtered_df[filtered_df['subscribers'] < 100_000]
-                    hidden_count = int(df['subscribers_hidden'].sum())
-                    caption = f"Показано {len(filtered_df)} из {len(df)} видео"
-                    if hidden_count: caption += f" • у {hidden_count} каналов подписчики скрыты владельцем (не 0 — YouTube просто не отдаёт эти данные)"
-                    st.caption(caption)
-
-                    display_df = filtered_df[['title', 'video_url', 'channel', 'channel_url', 'subscribers_formatted', 'views', 'views_per_day', 'engagement_rate', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values('views', ascending=False)
-                    st.dataframe(
-                        display_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            'title': st.column_config.TextColumn('Заголовок', width='large'),
-                            'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
-                            'channel': st.column_config.TextColumn('Канал'),
-                            'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
-                            'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
-                            'views': st.column_config.NumberColumn('Просмотры', format='%d'),
-                            'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d', help='Средняя скорость набора просмотров'),
-                            'engagement_rate': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f', help='(лайки + комментарии) / просмотры'),
-                            'likes': st.column_config.NumberColumn('Лайки', format='%d'),
-                            'duration_formatted': st.column_config.TextColumn('Длительность'),
-                            'short_indicator': st.column_config.TextColumn('Тип видео'),
-                            'published': st.column_config.DatetimeColumn('Дата', format='DD.MM.YYYY')
-                        }
-                    )
-
-                    st.markdown("### 🚀 Набирающие обороты")
-                    st.caption("Лидеры по скорости набора просмотров — самые горячие видео ниши прямо сейчас")
-                    rising_df = filtered_df.nlargest(10, 'views_per_day')[['title', 'video_url', 'channel', 'channel_url', 'views', 'views_per_day', 'days_ago']]
-                    st.dataframe(
-                        rising_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            'title': st.column_config.TextColumn('Заголовок', width='large'),
-                            'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
-                            'channel': st.column_config.TextColumn('Канал'),
-                            'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
-                            'views': st.column_config.NumberColumn('Просмотры', format='%d'),
-                            'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d'),
-                            'days_ago': st.column_config.NumberColumn('Дней назад', format='%d')
-                        }
-                    )
-
-                    st.markdown("### 📺 Каналы в нише")
-                    st.caption("Кто доминирует в выдаче — сколько видео в топе и с какими результатами")
-                    channels_df = filtered_df.groupby(['channel', 'channel_id'], as_index=False).agg(
-                        videos_in_top=('video_id', 'count'),
-                        total_views=('views', 'sum'),
-                        avg_views=('views', 'mean'),
-                        subscribers=('subscribers', 'first'),
-                        subscribers_formatted=('subscribers_formatted', 'first'),
-                        channel_age_days=('channel_age_days', 'first'),
-                        avg_engagement=('engagement_rate', 'mean')
-                    )
-                    channels_df['channel_url'] = 'https://www.youtube.com/channel/' + channels_df['channel_id'].astype(str)
-                    channels_df['views_per_sub'] = np.where(channels_df['subscribers'] > 0, channels_df['avg_views'] / channels_df['subscribers'], 0)
-                    channels_df['channel_age_years'] = (channels_df['channel_age_days'] / 365).round(1)
-                    channels_df = channels_df.sort_values('total_views', ascending=False).head(25)
-                    st.dataframe(
-                        channels_df[['channel', 'channel_url', 'subscribers_formatted', 'channel_age_years', 'videos_in_top', 'total_views', 'avg_views', 'views_per_sub', 'avg_engagement']],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            'channel': st.column_config.TextColumn('Канал', width='medium'),
-                            'channel_url': st.column_config.LinkColumn('Ссылка', display_text='📺 Открыть'),
-                            'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
-                            'channel_age_years': st.column_config.NumberColumn('Возраст канала, лет', format='%.1f'),
-                            'videos_in_top': st.column_config.NumberColumn('Видео в выдаче', format='%d'),
-                            'total_views': st.column_config.NumberColumn('Просмотры (сумма)', format='%d'),
-                            'avg_views': st.column_config.NumberColumn('Просмотры (сред.)', format='%d'),
-                            'views_per_sub': st.column_config.NumberColumn('⚡ Просм./подписчик', format='%.2f', help='Больше 1 — контент разлетается шире своей базы подписчиков'),
-                            'avg_engagement': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f')
-                        }
-                    )
-
-                    with st.expander("📈 Карта виральности: подписчики vs просмотры"):
-                        st.caption("Точки выше диагонали — видео, набравшие больше просмотров, чем «положено» по размеру канала. Это ниши-возможности.")
-                        scatter_df = filtered_df[filtered_df['subscribers'] > 0]
-                        if not scatter_df.empty:
-                            fig_scatter = px.scatter(
-                                scatter_df, x='subscribers', y='views',
-                                color='short_indicator', hover_name='title',
-                                hover_data={'channel': True, 'views_per_day': True, 'subscribers': True, 'views': True, 'short_indicator': False},
-                                log_x=True, log_y=True,
-                                labels={'subscribers': 'Подписчики канала', 'views': 'Просмотры видео', 'short_indicator': 'Тип'}
-                            )
-                            max_val = max(scatter_df['subscribers'].max(), scatter_df['views'].max())
-                            fig_scatter.add_trace(go.Scatter(
-                                x=[1, max_val], y=[1, max_val], mode='lines',
-                                line=dict(dash='dash', color='gray'), name='1 просмотр = 1 подписчик', hoverinfo='skip'
-                            ))
-                            fig_scatter.update_layout(template='plotly_dark', height=500)
-                            st.plotly_chart(fig_scatter, use_container_width=True)
-                        else:
-                            st.info("Недостаточно данных для графика.")
-
-                    st.markdown("### ✍️ Что работает в заголовках")
-                    st.caption("Сравнение среднего числа просмотров у видео с разными приёмами в заголовке — помогает понять, что цепляет в этой нише")
-                    pattern_rows = []
-                    patterns = [
-                        ('Есть цифра в заголовке', 'title_has_number'),
-                        ('Заголовок-вопрос', 'title_has_question'),
-                        ('Есть скобки/уточнение', 'title_has_brackets'),
-                    ]
-                    for label, col in patterns:
-                        with_pattern = filtered_df[filtered_df[col] == True]['views']
-                        without_pattern = filtered_df[filtered_df[col] == False]['views']
-                        if len(with_pattern) >= 3 and len(without_pattern) >= 3:
-                            pattern_rows.append({
-                                'Приём': label,
-                                'Ср. просмотры (есть)': int(with_pattern.mean()),
-                                'Ср. просмотры (нет)': int(without_pattern.mean()),
-                                'Эффект': f"{(with_pattern.mean() / without_pattern.mean() - 1) * 100:+.0f}%",
-                                'Видео с приёмом': len(with_pattern)
-                            })
-                    if pattern_rows:
-                        st.dataframe(pd.DataFrame(pattern_rows), use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Недостаточно видео для сравнения паттернов заголовков.")
-
-                    length_bins = pd.cut(filtered_df['title_length'], bins=[0, 30, 50, 70, 100, 1000], labels=['до 30', '30-50', '50-70', '70-100', '100+'])
-                    length_stats = filtered_df.groupby(length_bins, observed=True)['views'].agg(['mean', 'count']).reset_index()
-                    length_stats.columns = ['Длина заголовка', 'Ср. просмотры', 'Кол-во видео']
-                    length_stats = length_stats[length_stats['Кол-во видео'] >= 2]
-                    if not length_stats.empty:
-                        fig_length = px.bar(length_stats, x='Длина заголовка', y='Ср. просмотры', text='Кол-во видео', title='Средние просмотры по длине заголовка (символов)')
-                        fig_length.update_layout(template='plotly_dark', height=350)
-                        st.plotly_chart(fig_length, use_container_width=True)
-
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword.replace(" ", "_")}.csv', 'text/csv')
+            # Результат сохраняется в session_state: переключение фильтров/сортировки на вкладках
+            # не должно стирать анализ и требовать повторного поиска (кнопка Streamlit "жмётся" только на 1 rerun)
+            st.session_state.analysis = {
+                'keyword': keyword,
+                'videos': videos,
+                'comp_analysis': comp_analysis,
+                'df': df,
+                'trends_data': trends_data,
+                'strategy_output': strategy_output,
+                'use_ai': strategist.use_ai,
+            }
+            st.session_state.tag_results = None
 
         except Exception as e:
             st.error(f"❌ Произошла непредвиденная ошибка: {str(e)}")
             logger.error(f"Критическая ошибка в main(): {e}", exc_info=True)
+
+    result = st.session_state.get('analysis')
+    if result:
+        keyword_r = result['keyword']
+        videos = result['videos']
+        comp_analysis = result['comp_analysis']
+        df = result['df']
+        trends_data = result['trends_data']
+        strategy_output = result['strategy_output']
+        use_ai_result = result['use_ai']
+
+        st.markdown(f"# 📊 Анализ ниши: **{keyword_r}**")
+
+        cols = st.columns(5)
+        cols[0].metric("📹 Видео", f"{len(df)}")
+        cols[1].metric("🏆 Конкуренция", comp_analysis.get('competition_level', 'N/A').split()[0])
+        cols[2].metric("👀 Сред. просмотры", safe_format_number(int(comp_analysis.get('avg_views', 0))))
+        cols[3].metric("💬 Активность", f"{comp_analysis.get('engagement_rate', 0):.1f}%")
+        cols[4].metric("📺 Каналов", comp_analysis.get('unique_channels', 0))
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 AI Советы", "🏷️ Анализ тегов", "📈 Популярность", "🏆 Топ видео", "📊 Статистика"])
+
+        with tab1:
+            css_class = "openai-result" if use_ai_result else "custom-container"
+            st.markdown(f'<div class="{css_class}">{strategy_output}</div>', unsafe_allow_html=True)
+
+        with tab2:
+            all_tags = [tag.lower() for v in videos if v.get('tags') for tag in v['tags']]
+            if all_tags:
+                tag_popularity = Counter(all_tags)
+                st.markdown("#### Выберите теги для детального анализа")
+                selected_tags = st.multiselect("Популярные теги:", [t for t, c in tag_popularity.most_common(20)], default=[t for t,c in tag_popularity.most_common(5)], key="selected_tags_ms")
+                custom_tags = st.text_input("Добавьте свои теги через запятую:", key="custom_tags_input")
+                if custom_tags: selected_tags.extend([t.strip().lower() for t in custom_tags.split(',') if t.strip()])
+
+                if st.button("🔍 Анализировать выбранные теги", type="secondary"):
+                    unique_tags_to_analyze = list(set(selected_tags))[:20]
+                    tag_analyzer = YouTubeTagAnalyzer(serpapi_key if use_serpapi and validate_serpapi_key(serpapi_key) else None, cache)
+                    with st.spinner(f"🏷️ Анализирую {len(unique_tags_to_analyze)} тегов..."):
+                        st.session_state.tag_results = tag_analyzer.analyze_multiple_keywords(unique_tags_to_analyze)
+
+                if st.session_state.get('tag_results'):
+                    results_df = pd.DataFrame([vars(r) for r in st.session_state.tag_results])
+                    st.dataframe(results_df[['keyword', 'search_volume', 'competition_score', 'seo_score', 'overall_score', 'difficulty']].rename(columns={'keyword':'Тег','search_volume':'Объем','competition_score':'Конкуренция','seo_score':'SEO','overall_score':'Оценка','difficulty':'Сложность'}), hide_index=True)
+            else:
+                st.warning("Теги не найдены в проанализированных видео.")
+
+        with tab3:
+            if trends_data and 'interest_df' in trends_data and not trends_data['interest_df'].empty:
+                fig = px.line(trends_data['interest_df'], x=trends_data['interest_df'].index, y=keyword_r, title=f'Популярность темы: "{keyword_r}"')
+                fig.update_layout(template='plotly_dark')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("📈 Данные Google Trends недоступны.")
+
+        with tab4:
+            st.markdown("### 🏆 Топ видео по просмотрам")
+            if not df.empty:
+                for _, video in df.nlargest(10, 'views').iterrows():
+                    with st.container(border=True):
+                        col1, col2 = st.columns([1, 4])
+                        channel_link = video.get('channel_url', '') or f"https://www.youtube.com/channel/{video['channel_id']}"
+                        with col1: st.image(video.get('thumbnail', ''))
+                        with col2: st.markdown(f"""
+                            **[{video['title']}]({video['video_url']})**<br>
+                            📺 **[{video['channel']}]({channel_link})** ({video['subscribers_formatted']} подписчиков)<br>
+                            👀 {video['views_formatted']} • 👍 {video['likes_formatted']} • ⏱️ {video['duration_formatted']} • 🚀 {safe_format_number(video.get('views_per_day', 0))}/день
+                            """, unsafe_allow_html=True)
+
+        with tab5:
+            st.markdown("### 📊 Детальная статистика по найденным видео")
+            if not df.empty:
+                SUBS_OPTIONS = [10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 5_000_000, 10**9]
+                VIEWS_OPTIONS = [0, 1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 500_000, 1_000_000, 5_000_000]
+
+                fcol1, fcol2, fcol3 = st.columns([1.3, 1, 1])
+                with fcol1:
+                    type_filter = st.radio("Тип контента:", ["Все", "📹 Видео", "🩳 Shorts"], horizontal=True, key="type_filter")
+                with fcol2:
+                    max_subs = st.select_slider("Подписчиков не более", options=SUBS_OPTIONS, value=SUBS_OPTIONS[-1], format_func=lambda v: "Без ограничений" if v >= 10**9 else safe_format_number(v), key="max_subs_filter", help="Например: маленькие подписчики + много просмотров = недооценённая ниша")
+                with fcol3:
+                    min_views = st.select_slider("Просмотров не менее", options=VIEWS_OPTIONS, value=VIEWS_OPTIONS[0], format_func=lambda v: "Любое" if v == 0 else safe_format_number(v), key="min_views_filter")
+
+                preset_col, sort_col1, sort_col2 = st.columns([1.4, 1.6, 1])
+                with preset_col:
+                    if st.button("💎 Только жемчужины", use_container_width=True, help="Один клик: маленькие каналы (до 50K подписчиков) с просмотрами от 10K — как ты обычно фильтруешь вручную"):
+                        st.session_state.max_subs_filter = 50_000
+                        st.session_state.min_views_filter = 10_000
+                        st.rerun()
+
+                SORT_OPTIONS = {
+                    '👀 Просмотры': 'views',
+                    '🚀 Просмотры/день': 'views_per_day',
+                    '💎 Индекс возможности': 'opportunity_score',
+                    '💬 Вовлечённость': 'engagement_rate',
+                    '⚡ Просмотры/подписчик': 'views_per_subscriber',
+                    '👥 Подписчики': 'subscribers',
+                    '📅 Дата публикации': 'published',
+                }
+                with sort_col1:
+                    sort_label = st.selectbox("Сортировать по:", list(SORT_OPTIONS.keys()), index=0, key="sort_by_select")
+                with sort_col2:
+                    sort_desc = st.toggle("По убыванию", value=True, key="sort_desc_toggle")
+
+                filtered_df = df.copy()
+                if type_filter == "📹 Видео": filtered_df = filtered_df[~filtered_df['is_short']]
+                elif type_filter == "🩳 Shorts": filtered_df = filtered_df[filtered_df['is_short']]
+                if max_subs < SUBS_OPTIONS[-1]: filtered_df = filtered_df[filtered_df['subscribers'] <= max_subs]
+                if min_views > 0: filtered_df = filtered_df[filtered_df['views'] >= min_views]
+
+                hidden_count = int(df['subscribers_hidden'].sum())
+                caption = f"Показано {len(filtered_df)} из {len(df)} видео"
+                if hidden_count: caption += f" • у {hidden_count} каналов подписчики скрыты владельцем (не 0 — YouTube просто не отдаёт эти данные)"
+                st.caption(caption)
+
+                sort_col_name = SORT_OPTIONS[sort_label]
+                display_df = filtered_df[['title', 'video_url', 'channel', 'channel_url', 'subscribers_formatted', 'views', 'views_per_day', 'opportunity_score', 'engagement_rate', 'likes', 'duration_formatted', 'short_indicator', 'published']].sort_values(sort_col_name, ascending=not sort_desc)
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'title': st.column_config.TextColumn('Заголовок', width='large'),
+                        'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
+                        'channel': st.column_config.TextColumn('Канал'),
+                        'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
+                        'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
+                        'views': st.column_config.NumberColumn('Просмотры', format='%d'),
+                        'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d', help='Средняя скорость набора просмотров'),
+                        'opportunity_score': st.column_config.ProgressColumn('💎 Возможность', format='%.0f', min_value=0, max_value=100, help='Просмотры относительно размера канала (60%) + скорость роста (40%). Высокий балл = маленький канал с непропорционально большими и растущими просмотрами'),
+                        'engagement_rate': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f', help='(лайки + комментарии) / просмотры'),
+                        'likes': st.column_config.NumberColumn('Лайки', format='%d'),
+                        'duration_formatted': st.column_config.TextColumn('Длительность'),
+                        'short_indicator': st.column_config.TextColumn('Тип видео'),
+                        'published': st.column_config.DatetimeColumn('Дата', format='DD.MM.YYYY')
+                    }
+                )
+
+                st.markdown("### 🚀 Набирающие обороты")
+                st.caption("Лидеры по скорости набора просмотров — самые горячие видео ниши прямо сейчас")
+                rising_df = filtered_df.nlargest(10, 'views_per_day')[['title', 'video_url', 'channel', 'channel_url', 'views', 'views_per_day', 'days_ago']]
+                st.dataframe(
+                    rising_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'title': st.column_config.TextColumn('Заголовок', width='large'),
+                        'video_url': st.column_config.LinkColumn('Видео', display_text='▶️ Смотреть'),
+                        'channel': st.column_config.TextColumn('Канал'),
+                        'channel_url': st.column_config.LinkColumn('Канал ↗', display_text='📺 Открыть'),
+                        'views': st.column_config.NumberColumn('Просмотры', format='%d'),
+                        'views_per_day': st.column_config.NumberColumn('🚀 Просм./день', format='%d'),
+                        'days_ago': st.column_config.NumberColumn('Дней назад', format='%d')
+                    }
+                )
+
+                st.markdown("### 📺 Каналы в нише")
+                st.caption("Кто доминирует в выдаче — сколько видео в топе и с какими результатами")
+                channels_df = filtered_df.groupby(['channel', 'channel_id'], as_index=False).agg(
+                    videos_in_top=('video_id', 'count'),
+                    total_views=('views', 'sum'),
+                    avg_views=('views', 'mean'),
+                    subscribers=('subscribers', 'first'),
+                    subscribers_formatted=('subscribers_formatted', 'first'),
+                    channel_age_days=('channel_age_days', 'first'),
+                    avg_engagement=('engagement_rate', 'mean')
+                )
+                channels_df['channel_url'] = 'https://www.youtube.com/channel/' + channels_df['channel_id'].astype(str)
+                channels_df['views_per_sub'] = np.where(channels_df['subscribers'] > 0, channels_df['avg_views'] / channels_df['subscribers'], 0)
+                channels_df['channel_age_years'] = (channels_df['channel_age_days'] / 365).round(1)
+                channels_df = channels_df.sort_values('total_views', ascending=False).head(25)
+                st.dataframe(
+                    channels_df[['channel', 'channel_url', 'subscribers_formatted', 'channel_age_years', 'videos_in_top', 'total_views', 'avg_views', 'views_per_sub', 'avg_engagement']],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'channel': st.column_config.TextColumn('Канал', width='medium'),
+                        'channel_url': st.column_config.LinkColumn('Ссылка', display_text='📺 Открыть'),
+                        'subscribers_formatted': st.column_config.TextColumn('Подписчики'),
+                        'channel_age_years': st.column_config.NumberColumn('Возраст канала, лет', format='%.1f'),
+                        'videos_in_top': st.column_config.NumberColumn('Видео в выдаче', format='%d'),
+                        'total_views': st.column_config.NumberColumn('Просмотры (сумма)', format='%d'),
+                        'avg_views': st.column_config.NumberColumn('Просмотры (сред.)', format='%d'),
+                        'views_per_sub': st.column_config.NumberColumn('⚡ Просм./подписчик', format='%.2f', help='Больше 1 — контент разлетается шире своей базы подписчиков'),
+                        'avg_engagement': st.column_config.NumberColumn('💬 Вовлеч. %', format='%.2f')
+                    }
+                )
+
+                with st.expander("📈 Карта виральности: подписчики vs просмотры"):
+                    st.caption("Точки выше диагонали — видео, набравшие больше просмотров, чем «положено» по размеру канала. Это ниши-возможности.")
+                    scatter_df = filtered_df[filtered_df['subscribers'] > 0]
+                    if not scatter_df.empty:
+                        fig_scatter = px.scatter(
+                            scatter_df, x='subscribers', y='views',
+                            color='short_indicator', hover_name='title',
+                            hover_data={'channel': True, 'views_per_day': True, 'subscribers': True, 'views': True, 'short_indicator': False},
+                            log_x=True, log_y=True,
+                            labels={'subscribers': 'Подписчики канала', 'views': 'Просмотры видео', 'short_indicator': 'Тип'}
+                        )
+                        max_val = max(scatter_df['subscribers'].max(), scatter_df['views'].max())
+                        fig_scatter.add_trace(go.Scatter(
+                            x=[1, max_val], y=[1, max_val], mode='lines',
+                            line=dict(dash='dash', color='gray'), name='1 просмотр = 1 подписчик', hoverinfo='skip'
+                        ))
+                        fig_scatter.update_layout(template='plotly_dark', height=500)
+                        st.plotly_chart(fig_scatter, use_container_width=True)
+                    else:
+                        st.info("Недостаточно данных для графика.")
+
+                st.markdown("### ✍️ Что работает в заголовках")
+                st.caption("Сравнение среднего числа просмотров у видео с разными приёмами в заголовке — помогает понять, что цепляет в этой нише")
+                pattern_rows = []
+                patterns = [
+                    ('Есть цифра в заголовке', 'title_has_number'),
+                    ('Заголовок-вопрос', 'title_has_question'),
+                    ('Есть скобки/уточнение', 'title_has_brackets'),
+                ]
+                for label, col in patterns:
+                    with_pattern = filtered_df[filtered_df[col] == True]['views']
+                    without_pattern = filtered_df[filtered_df[col] == False]['views']
+                    if len(with_pattern) >= 3 and len(without_pattern) >= 3:
+                        pattern_rows.append({
+                            'Приём': label,
+                            'Ср. просмотры (есть)': int(with_pattern.mean()),
+                            'Ср. просмотры (нет)': int(without_pattern.mean()),
+                            'Эффект': f"{(with_pattern.mean() / without_pattern.mean() - 1) * 100:+.0f}%",
+                            'Видео с приёмом': len(with_pattern)
+                        })
+                if pattern_rows:
+                    st.dataframe(pd.DataFrame(pattern_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Недостаточно видео для сравнения паттернов заголовков.")
+
+                length_bins = pd.cut(filtered_df['title_length'], bins=[0, 30, 50, 70, 100, 1000], labels=['до 30', '30-50', '50-70', '70-100', '100+'])
+                length_stats = filtered_df.groupby(length_bins, observed=True)['views'].agg(['mean', 'count']).reset_index()
+                length_stats.columns = ['Длина заголовка', 'Ср. просмотры', 'Кол-во видео']
+                length_stats = length_stats[length_stats['Кол-во видео'] >= 2]
+                if not length_stats.empty:
+                    fig_length = px.bar(length_stats, x='Длина заголовка', y='Ср. просмотры', text='Кол-во видео', title='Средние просмотры по длине заголовка (символов)')
+                    fig_length.update_layout(template='plotly_dark', height=350)
+                    st.plotly_chart(fig_length, use_container_width=True)
+
+                csv_data = df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Скачать полные данные (CSV)", csv_data, f'youtube_analysis_{keyword_r.replace(" ", "_")}.csv', 'text/csv')
 
 if __name__ == "__main__":
     main()
